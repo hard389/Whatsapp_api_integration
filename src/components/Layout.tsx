@@ -21,9 +21,7 @@ const navigation = [
   { name: 'Import Excel', href: '/import', icon: FileSpreadsheet, color: 'from-emerald-500 to-teal-500' },
   { name: 'New Campaign', href: '/composer', icon: Send, color: 'from-orange-500 to-amber-500' },
   { name: 'Manage Clients', href: '/clients', icon: Users, color: 'from-indigo-500 to-blue-500' },
-  { name: 'Analytics', href: '/analytics', icon: PieChart, color: 'from-amber-500 to-yellow-500' },
-  { name: 'API Settings', href: '/settings', icon: Settings, color: 'from-sky-500 to-blue-500' },
-  { name: 'Audit Logs', href: '/audit-logs', icon: ShieldCheck, color: 'from-rose-500 to-pink-500' },
+  { name: 'Profile Settings', href: '/quiz', icon: Settings, color: 'from-sky-500 to-blue-500' },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {

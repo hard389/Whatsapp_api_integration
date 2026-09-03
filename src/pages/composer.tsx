@@ -4,56 +4,40 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getFirestore, 
   collection, 
-  getDocs, 
+  onSnapshot,
   doc, 
-  getDoc,
-  setDoc, 
   updateDoc,
-  deleteDoc,
-  query,
-  orderBy,
   addDoc
 } from 'firebase/firestore';
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import {
   Search,
   Bell,
   Sun,
   Moon,
   ChevronRight,
-  ChevronLeft,
   Home,
-  PlusCircle,
-  ShoppingCart,
-  PieChart,
+  FileSpreadsheet,
+  Send,
+  Users,
+  Settings,
   Check,
-  Save,
   Sparkles,
   CheckCircle2,
   AlertTriangle,
   X,
   ArrowLeft,
   Trash2,
-  Plus,
-  Minus,
-  CreditCard,
-  Banknote,
-  Receipt,
-  User,
   Package,
-  Printer,
-  FileText,
   Edit,
-  Edit3,
-  Layers,
-  Calendar,
-  Send,
-  Users,
   Clock,
   CheckCheck,
-  Info,
-  HelpCircle,
-  RotateCcw
+  Star,
+  ChevronLeft,
+  Crown,
+  UserCheck,
+  ChevronDown,
+  Layers
 } from 'lucide-react';
 
 // Firebase Configuration
@@ -75,9 +59,10 @@ interface Client {
   id: string;
   name: string;
   phone: string;
-  isValid: boolean;
-  optedOut: boolean;
+  isValid?: boolean;
+  optedOut?: boolean;
   segment?: string;
+  isFavorite?: boolean;
 }
 
 interface CampaignData {
@@ -97,9 +82,26 @@ interface CampaignData {
 }
 
 export default function WhatsAppComposer() {
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
   const [isDark, setIsDark] = useState(false);
   const [activeTab, setActiveTab] = useState('composer');
+
+  // Dynamic Realtime Database Clients State
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loadingClients, setLoadingClients] = useState(true);
+
+  // Modal & Category Segment States
+  const [showSegmentModal, setShowSegmentModal] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<'VIP Clients' | 'Regulars' | 'New Leads'>('VIP Clients');
+  const [modalSearchQuery, setModalSearchQuery] = useState('');
+  const [modalCurrentPage, setModalCurrentPage] = useState(1);
+  const modalItemsPerPage = 10;
+  const [tempSelectedClients, setTempSelectedClients] = useState<string[]>([]);
+
+  // Main Pagination State for Client Cards outside modal
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 3;
 
   // Campaign Form States
   const [campaignName, setCampaignName] = useState('September Client Greeting');
@@ -147,37 +149,140 @@ export default function WhatsAppComposer() {
   const [showErrorToast, setShowErrorToast] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Sample Mock Clients (Simulating Database / CRM Sync)
-  const [clients] = useState<Client[]>([
-    { id: '1', name: 'Ali Khan', phone: '+923001111111', isValid: true, optedOut: false, segment: 'VIP Clients' },
-    { id: '2', name: 'Ahmed Raza', phone: '+923012222222', isValid: true, optedOut: false, segment: 'VIP Clients' },
-    { id: '3', name: 'Usman Ali', phone: '+923023333333', isValid: true, optedOut: false, segment: 'Regulars' },
-    { id: '4', name: 'Sara Ahmed', phone: '+923034444444', isValid: true, optedOut: false, segment: 'VIP Clients' },
-    { id: '5', name: 'Zubair Qureshi', phone: '+923045555555', isValid: true, optedOut: false, segment: 'New Leads' },
-    { id: '6', name: 'Hamza Malik', phone: '+923056666666', isValid: false, optedOut: false, segment: 'Regulars' },
-    { id: '7', name: 'Tariq Jameel', phone: '+923067777777', isValid: true, optedOut: true, segment: 'VIP Clients' },
-    { id: '8', name: '', phone: '+923078888888', isValid: true, optedOut: false, segment: 'Regulars' }, // Missing name
-  ]);
-
-  // Firebase Auth
+  // 1. Firebase Auth Observer
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user && user.email) {
-        setCurrentUserEmail(user.email);
+      if (user) {
+        setCurrentUser(user);
+        setCurrentUserEmail(user.email || user.uid);
       } else {
-        const savedEmail = localStorage.getItem('userEmail') || 'alitahir243715@gmail.com';
-        setCurrentUserEmail(savedEmail);
+        setCurrentUser(null);
+        setCurrentUserEmail('alitahir243715@gmail.com');
       }
     });
     return () => unsubscribe();
   }, []);
 
-  // Sync default preview client when clients list or selection changes
+  // 2. Realtime Database Synchronization from Firestore active user path: users/{userId}/clients
+  useEffect(() => {
+    const targetUserId = currentUser?.uid || 'rcNb6A48ANTEa8s1apeHyL6ijyU2'; 
+
+    const clientsCollectionRef = collection(db, 'users', targetUserId, 'clients');
+    
+    setLoadingClients(true);
+    const unsubscribeSnapshot = onSnapshot(clientsCollectionRef, 
+      (snapshot) => {
+        const fetchedClients: Client[] = snapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          name: docSnap.data().name || '',
+          phone: docSnap.data().phone || docSnap.data().phoneNumber || '',
+          isValid: docSnap.data().isValid !== undefined ? docSnap.data().isValid : true,
+          optedOut: docSnap.data().optedOut || false,
+          segment: docSnap.data().segment || 'VIP Clients',
+          isFavorite: docSnap.data().isFavorite || false,
+        }));
+
+        setClients(fetchedClients);
+        setLoadingClients(false);
+      },
+      (error) => {
+        console.error("Firestore Clients Fetch Error:", error);
+        triggerError("Database client fetch error");
+        setLoadingClients(false);
+      }
+    );
+
+    return () => unsubscribeSnapshot();
+  }, [currentUser]);
+
+  // Sync default preview client when clients list changes
   useEffect(() => {
     if (clients.length > 0 && !previewClientId) {
       setPreviewClientId(clients[0].id);
     }
   }, [clients, previewClientId]);
+
+  // Reset pages on search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [clientSearchQuery]);
+
+  useEffect(() => {
+    setModalCurrentPage(1);
+  }, [modalSearchQuery, activeCategory]);
+
+  // Handle Client Selection / Favorite Action
+  const handleSelectCardToFavorite = async (client: Client) => {
+    const targetUserId = currentUser?.uid || 'rcNb6A48ANTEa8s1apeHyL6ijyU2';
+    
+    if (!selectedClientIds.includes(client.id)) {
+      setSelectedClientIds(prev => [...prev, client.id]);
+    }
+
+    try {
+      const clientDocRef = doc(db, 'users', targetUserId, 'clients', client.id);
+      await updateDoc(clientDocRef, {
+        isFavorite: true,
+        segment: activeCategory
+      });
+      triggerSuccess(`${client.name || 'Client'} saved to ${activeCategory}!`);
+    } catch (err) {
+      console.error(err);
+      triggerSuccess(`${client.name || 'Client'} selected!`);
+    }
+  };
+
+  // Toggle Selection inside Modal
+  const toggleModalClientSelection = (clientId: string) => {
+    setTempSelectedClients(prev => 
+      prev.includes(clientId) ? prev.filter(id => id !== clientId) : [...prev, clientId]
+    );
+  };
+
+  // Save Modal Client Selections to Firebase & UI
+  const handleSaveModalSelection = async () => {
+    const targetUserId = currentUser?.uid || 'rcNb6A48ANTEa8s1apeHyL6ijyU2';
+    
+    try {
+      // Update each selected client in Firestore to belong to active category and mark as favorite
+      const updatePromises = tempSelectedClients.map(clientId => {
+        const clientDocRef = doc(db, 'users', targetUserId, 'clients', clientId);
+        return updateDoc(clientDocRef, {
+          segment: activeCategory,
+          isFavorite: true
+        });
+      });
+
+      await Promise.all(updatePromises);
+
+      // Append to main selection state
+      setSelectedClientIds(prev => Array.from(new Set([...prev, ...tempSelectedClients])));
+      
+      triggerSuccess(`Successfully added clients to ${activeCategory}!`);
+      setShowSegmentModal(false);
+      setTempSelectedClients([]);
+    } catch (err) {
+      console.error(err);
+      triggerError("Error saving client category updates.");
+    }
+  };
+
+  // Remove Card from Selection / Unfavorite
+  const handleRemoveFavoriteCard = async (client: Client) => {
+    const targetUserId = currentUser?.uid || 'rcNb6A48ANTEa8s1apeHyL6ijyU2';
+
+    setSelectedClientIds(prev => prev.filter(id => id !== client.id));
+
+    try {
+      const clientDocRef = doc(db, 'users', targetUserId, 'clients', client.id);
+      await updateDoc(clientDocRef, {
+        isFavorite: false
+      });
+      triggerSuccess("Client removed from list.");
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // Filtering Recipient Calculations
   const calculatedRecipients = useMemo(() => {
@@ -194,8 +299,7 @@ export default function WhatsAppComposer() {
     const invalidCount = filtered.filter(c => c.isValid === false).length;
     const missingNameCount = filtered.filter(c => !c.name || !c.name.trim()).length;
 
-    // Valid recipients for personalized campaign
-    const validRecipients = filtered.filter(c => c.isValid && !c.optedOut && c.name && c.name.trim());
+    const validRecipients = filtered.filter(c => (c.isValid !== false) && !c.optedOut && c.name && c.name.trim());
 
     return {
       totalCount,
@@ -204,10 +308,38 @@ export default function WhatsAppComposer() {
       missingNameCount,
       validRecipients,
       finalCount: validRecipients.length,
-      invalidClientsList: filtered.filter(c => !c.isValid),
-      missingNameClientsList: filtered.filter(c => c.isValid && !c.optedOut && (!c.name || !c.name.trim()))
+      invalidClientsList: filtered.filter(c => c.isValid === false),
+      missingNameClientsList: filtered.filter(c => (c.isValid !== false) && !c.optedOut && (!c.name || !c.name.trim()))
     };
   }, [clients, recipientSelection, selectedClientIds, selectedSegment]);
+
+  // Filtered Clients for Outer Pagination Grid
+  const filteredAvailableClients = useMemo(() => {
+    return clients
+      .filter(c => !(c.isFavorite || selectedClientIds.includes(c.id)))
+      .filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) || c.phone.includes(clientSearchQuery));
+  }, [clients, selectedClientIds, clientSearchQuery]);
+
+  const totalPages = Math.ceil(filteredAvailableClients.length / itemsPerPage) || 1;
+  
+  const currentPaginatedClients = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredAvailableClients.slice(start, start + itemsPerPage);
+  }, [filteredAvailableClients, currentPage, itemsPerPage]);
+
+  // Filtered Clients for Segment Modal (Auto removes already saved clients, paginated at 10)
+  const modalAvailableClients = useMemo(() => {
+    return clients
+      .filter(c => !(c.isFavorite && c.segment === activeCategory) && !selectedClientIds.includes(c.id))
+      .filter(c => c.name.toLowerCase().includes(modalSearchQuery.toLowerCase()) || c.phone.includes(modalSearchQuery));
+  }, [clients, selectedClientIds, activeCategory, modalSearchQuery]);
+
+  const modalTotalPages = Math.ceil(modalAvailableClients.length / modalItemsPerPage) || 1;
+
+  const modalPaginatedClients = useMemo(() => {
+    const start = (modalCurrentPage - 1) * modalItemsPerPage;
+    return modalAvailableClients.slice(start, start + modalItemsPerPage);
+  }, [modalAvailableClients, modalCurrentPage, modalItemsPerPage]);
 
   // Message Statistics
   const characterCount = message.length;
@@ -225,12 +357,10 @@ export default function WhatsAppComposer() {
     setTimeout(() => setShowErrorToast(false), 3500);
   };
 
-  // Variable insertion at cursor / end of message
   const handleInsertVariable = (varName: string) => {
     setMessage((prev) => `${prev} {{${varName}}}`);
   };
 
-  // Live WhatsApp Preview Text Generator
   const previewText = useMemo(() => {
     const targetClient = clients.find(c => c.id === previewClientId) || clients[0];
     const clientName = targetClient?.name || 'Valued Client';
@@ -241,7 +371,6 @@ export default function WhatsAppComposer() {
       .replace(/\{\{first_name\}\}/g, firstName);
   }, [message, previewClientId, clients]);
 
-  // Test Message Handler
   const handleSendTestMessage = () => {
     if (!testPhoneNumber) return triggerError("Please enter a test phone number!");
     setTestSending(true);
@@ -254,36 +383,6 @@ export default function WhatsAppComposer() {
     }, 1200);
   };
 
-  // Save Draft to Firebase
-  const handleSaveDraft = async () => {
-    if (!campaignName.trim()) return triggerError("Campaign Name is required!");
-    if (!currentUserEmail) return;
-
-    try {
-      const draftData: CampaignData = {
-        name: campaignName.trim(),
-        description: campaignDescription.trim(),
-        recipientsType: recipientSelection,
-        selectedClientIds,
-        selectedSegment,
-        message,
-        scheduledDate: scheduleDate,
-        scheduledTime: scheduleTime,
-        timezone,
-        isScheduled: false,
-        status: 'draft',
-        createdAt: new Date().toISOString()
-      };
-
-      await addDoc(collection(db, 'users', currentUserEmail, 'whatsapp_campaigns'), draftData);
-      triggerSuccess("Campaign draft saved successfully!");
-    } catch (err) {
-      console.error(err);
-      triggerError("Failed to save draft. Check connection.");
-    }
-  };
-
-  // Start Official Backend Queue Process
   const handleStartCampaignExecution = async () => {
     setShowConfirmDialog(false);
     setShowReviewModal(false);
@@ -310,7 +409,6 @@ export default function WhatsAppComposer() {
 
     triggerSuccess("Campaign queued! Dispatching via Official WhatsApp API...");
 
-    // Simulated Backend Queue Simulation
     let currentSent = 0;
     const interval = setInterval(() => {
       currentSent += Math.floor(Math.random() * 25) + 10;
@@ -337,10 +435,10 @@ export default function WhatsAppComposer() {
 
   const navigationTabs = [
     { id: 'home', label: 'Home', icon: Home, href: '/' },
-    { id: 'add', label: 'Add Product', icon: PlusCircle, href: '/add-product' },
-    { id: 'sell', label: 'Sell Product', icon: ShoppingCart, href: '/sell-product' },
+    { id: 'import', label: 'Import Excel', icon: FileSpreadsheet, href: '/import-excel' },
     { id: 'composer', label: 'Composer', icon: Send, href: '/whatsapp-composer' },
-    { id: 'analytics', label: 'Analytics', icon: PieChart, href: '/analytics' },
+    { id: 'clients', label: 'Clients', icon: Users, href: '/clients' },
+    { id: 'settings', label: 'Settings', icon: Settings, href: '/settings' },
   ];
 
   return (
@@ -365,7 +463,7 @@ export default function WhatsAppComposer() {
         </div>
       )}
 
-      {/* FIXED TOP HEADER NAVBAR */}
+      {/* HEADER */}
       <header className="w-full bg-white/90 dark:bg-[#070b13]/90 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800/60 sticky top-0 z-40">
         <div className="mx-auto max-w-7xl flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
@@ -405,7 +503,7 @@ export default function WhatsAppComposer() {
 
       <main className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8 space-y-6">
         
-        {/* HERO TITLE SECTION */}
+        {/* HERO TITLE SECTION WITH CUSTOM CLIENT SEGMENT BUTTON */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-br from-amber-50/90 via-white to-orange-50/50 dark:from-[#0c1222] dark:via-[#0e162a] dark:to-[#070b13] p-5 sm:p-7 rounded-3xl border-2 border-orange-500/80 shadow-[0_0_25px_rgba(249,115,22,0.2)]">
           <div className="space-y-1">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/30">
@@ -416,22 +514,28 @@ export default function WhatsAppComposer() {
               Create Personalized Campaign
             </h1>
             <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              Compose, validate variables, preview live per client & schedule high-converting campaigns.
+              Fetch live clients, save favorites in beautiful cards & schedule high-converting campaigns.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* CLIENT SEGMENT BUTTON (REPLACED SAVE SELECTION BUTTON) */}
+          <div className="flex flex-col gap-1 items-start sm:items-end">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 px-1">
+              SELECT CLIENT SEGMENT
+            </span>
             <button
-              onClick={handleSaveDraft}
-              className="px-4 py-2.5 rounded-2xl bg-white dark:bg-[#070b13] border-2 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-black text-xs hover:border-orange-500 transition-all flex items-center gap-2 shadow-sm"
+              onClick={() => setShowSegmentModal(true)}
+              className="w-full sm:w-64 bg-slate-50/90 dark:bg-[#070b13] border-2 border-orange-500 rounded-full py-2.5 px-5 flex items-center justify-between hover:bg-orange-50 dark:hover:bg-slate-900 transition-all shadow-md group"
             >
-              <Save className="h-4 w-4 text-orange-500" />
-              <span>Save Draft</span>
+              <span className="font-black text-xs text-slate-800 dark:text-slate-100 group-hover:text-orange-500 transition-colors">
+                {selectedSegment || 'Regulars'}
+              </span>
+              <ChevronDown className="h-4 w-4 text-orange-500 group-hover:translate-y-0.5 transition-transform" />
             </button>
           </div>
         </div>
 
-        {/* ACTIVE CAMPAIGN QUEUE PROGRESS MONITOR (IF RUNNING) */}
+        {/* ACTIVE CAMPAIGN EXECUTION MONITOR */}
         {activeCampaign && (
           <div className="bg-white dark:bg-[#0c1222] p-6 rounded-3xl border-2 border-orange-500 shadow-[0_0_30px_rgba(249,115,22,0.3)] space-y-4 animate-fadeIn">
             <div className="flex justify-between items-center">
@@ -447,7 +551,6 @@ export default function WhatsAppComposer() {
               </button>
             </div>
 
-            {/* PROGRESS BAR */}
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs font-black">
                 <span className="text-slate-500">{sendingProgress.sent} / {sendingProgress.total} Sent</span>
@@ -461,7 +564,6 @@ export default function WhatsAppComposer() {
               </div>
             </div>
 
-            {/* STATS GRID */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
               <div className="bg-slate-50 dark:bg-[#070b13] p-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-center">
                 <span className="text-lg font-black text-slate-900 dark:text-white block">{sendingProgress.sent}</span>
@@ -483,13 +585,13 @@ export default function WhatsAppComposer() {
           </div>
         )}
 
-        {/* 2-COLUMN MAIN CAMPAIGN CREATION LAYOUT */}
+        {/* 2-COLUMN LAYOUT */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
-          {/* LEFT COLUMN: CAMPAIGN DETAILS, RECIPIENTS & MESSAGE COMPOSER */}
+          {/* LEFT COLUMN */}
           <div className="lg:col-span-7 space-y-6">
             
-            {/* 1. CAMPAIGN DETAILS CARD */}
+            {/* 1. CAMPAIGN DETAILS */}
             <div className="bg-white dark:bg-[#0c1222] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/60 shadow-sm space-y-4">
               <h2 className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <Package className="h-5 w-5 text-orange-500" />
@@ -528,11 +630,16 @@ export default function WhatsAppComposer() {
               </div>
             </div>
 
-            {/* 2. RECIPIENTS SELECTION CARD */}
+            {/* 2. RECIPIENTS SELECTION */}
             <div className="bg-white dark:bg-[#0c1222] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/60 shadow-sm space-y-4">
-              <h2 className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                <Users className="h-5 w-5 text-orange-500" />
-                <span>2. Recipients Selection</span>
+              <h2 className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-orange-500" />
+                  <span>2. Recipients Selection</span>
+                </div>
+                <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 font-black">
+                  Live DB Sync
+                </span>
               </h2>
 
               <div className="grid grid-cols-3 gap-2 bg-slate-50 dark:bg-[#070b13] p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800">
@@ -571,16 +678,73 @@ export default function WhatsAppComposer() {
                 </button>
               </div>
 
-              {/* ALL CLIENTS STATS SUMMARY */}
+              {/* SAVED / FAVORITE CARDS LIST */}
+              <div className="space-y-3 pt-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />
+                    <span>Selected / Favorite Client Cards</span>
+                  </span>
+                  <span className="text-[10px] font-black text-orange-500">
+                    {clients.filter(c => c.isFavorite || selectedClientIds.includes(c.id)).length} Saved
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {clients
+                    .filter(c => c.isFavorite || selectedClientIds.includes(c.id))
+                    .map(client => (
+                      <div
+                        key={client.id}
+                        className="p-3 bg-gradient-to-br from-amber-50/60 to-orange-50/30 dark:from-[#0d1627] dark:to-[#070b13] border-2 border-orange-500/60 rounded-2xl flex items-center justify-between shadow-sm group hover:scale-[1.01] transition-all"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-8 w-8 rounded-full bg-orange-500 text-white font-black text-xs flex items-center justify-center shrink-0">
+                            {client.name ? client.name.charAt(0).toUpperCase() : 'C'}
+                          </div>
+                          <div>
+                            <span className="text-xs font-black text-slate-900 dark:text-white block leading-tight">
+                              {client.name || 'Unnamed Client'}
+                            </span>
+                            <span className="text-[10px] font-extrabold text-orange-600 dark:text-orange-400 block">
+                              {client.phone}
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFavoriteCard(client)}
+                          title="Remove from cards"
+                          className="p-1.5 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all shrink-0"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+
+                  {clients.filter(c => c.isFavorite || selectedClientIds.includes(c.id)).length === 0 && (
+                    <div className="col-span-full py-4 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+                      <p className="text-xs font-bold text-slate-400">
+                        Koi Favorite Card nahi hai. Niche list ya Client Segment modal se select karein.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ALL CLIENTS SUMMARY */}
               {recipientSelection === 'all' && (
                 <div className="bg-slate-50 dark:bg-[#070b13] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2 text-xs font-bold">
                   <div className="flex justify-between text-slate-500">
-                    <span>Total Clients in CRM:</span>
-                    <span className="font-extrabold text-slate-800 dark:text-slate-100">{clients.length}</span>
+                    <span>Total Clients in Database:</span>
+                    <span className="font-extrabold text-slate-800 dark:text-slate-100">
+                      {loadingClients ? 'Loading...' : clients.length}
+                    </span>
                   </div>
                   <div className="flex justify-between text-emerald-600">
                     <span>Valid Numbers:</span>
-                    <span className="font-extrabold">{clients.filter(c => c.isValid).length}</span>
+                    <span className="font-extrabold">{clients.filter(c => c.isValid !== false).length}</span>
                   </div>
                   <div className="flex justify-between text-rose-500">
                     <span>Opted Out:</span>
@@ -593,56 +757,92 @@ export default function WhatsAppComposer() {
                 </div>
               )}
 
-              {/* SELECTED CLIENTS CHECKBOX LIST */}
-              {recipientSelection === 'selected' && (
-                <div className="space-y-3">
-                  <div className="relative">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Search client..."
-                      value={clientSearchQuery}
-                      onChange={(e) => setClientSearchQuery(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-[#070b13] border border-slate-200 dark:border-slate-800 rounded-2xl py-2 pl-10 pr-4 text-xs font-bold outline-none focus:border-orange-500"
-                    />
+              {/* SELECTABLE CLIENT CARDS WITH EXACT UI MATCH & PAGINATION */}
+              {(recipientSelection === 'selected' || recipientSelection === 'all') && (
+                <div className="space-y-3 pt-1">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                      AVAILABLE CLIENTS FROM LIVE DATABASE
+                    </span>
+                    <div className="relative w-full sm:w-48">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search client..."
+                        value={clientSearchQuery}
+                        onChange={(e) => setClientSearchQuery(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-[#070b13] border border-slate-200 dark:border-slate-800 rounded-full py-1.5 pl-8 pr-3 text-[11px] font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-orange-500"
+                      />
+                    </div>
                   </div>
 
-                  <div className="max-h-48 overflow-y-auto space-y-1.5 bg-slate-50 dark:bg-[#070b13] p-3 rounded-2xl border border-slate-200 dark:border-slate-800">
-                    {clients
-                      .filter(c => c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()))
-                      .map(client => {
-                        const isChecked = selectedClientIds.includes(client.id);
-                        return (
-                          <label
-                            key={client.id}
-                            className="flex items-center justify-between p-2 rounded-xl hover:bg-white dark:hover:bg-[#0c1222] cursor-pointer text-xs font-extrabold transition-all"
-                          >
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedClientIds(prev => [...prev, client.id]);
-                                  } else {
-                                    setSelectedClientIds(prev => prev.filter(id => id !== client.id));
-                                  }
-                                }}
-                                className="h-4 w-4 rounded accent-orange-500 cursor-pointer"
-                              />
-                              <span className={client.name ? 'text-slate-800 dark:text-slate-100' : 'text-rose-500 italic'}>
-                                {client.name || 'Unnamed Client'}
-                              </span>
-                            </div>
-                            <span className="text-[10px] font-bold text-slate-400">{client.phone}</span>
-                          </label>
-                        );
-                      })}
+                  {/* CARDS CONTAINER */}
+                  <div className="p-3 bg-slate-50/50 dark:bg-[#070b13]/50 rounded-[28px] border border-slate-200/80 dark:border-slate-800/80 space-y-2.5">
+                    {currentPaginatedClients.map(client => (
+                      <div
+                        key={client.id}
+                        className="p-3 bg-white dark:bg-[#0c1222] border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center justify-between shadow-xs hover:border-orange-500/40 transition-all"
+                      >
+                        <div className="truncate mr-2">
+                          <span className="text-xs font-black text-slate-900 dark:text-white block truncate">
+                            {client.name || 'Unnamed Client'}
+                          </span>
+                          <span className="text-[11px] font-bold text-slate-400">
+                            {client.phone}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCardToFavorite(client)}
+                          className="px-3 py-1.5 rounded-full bg-orange-500 text-white font-black text-[11px] hover:bg-orange-600 transition-all flex items-center gap-1 shrink-0 shadow-sm"
+                        >
+                          <UserCheck className="h-3.5 w-3.5" />
+                          <span>Select Card</span>
+                        </button>
+                      </div>
+                    ))}
+
+                    {filteredAvailableClients.length === 0 && (
+                      <div className="py-6 text-center text-xs font-bold text-slate-400">
+                        {loadingClients ? 'Loading Live Clients...' : 'Koi clients available nahi hain.'}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* PAGINATION BAR */}
+                  <div className="flex items-center justify-between pt-1 px-1">
+                    <span className="text-xs font-bold text-slate-600 dark:text-slate-400">
+                      <strong className="font-black text-slate-800 dark:text-slate-200">Pg {currentPage}/{totalPages}</strong>{' '}
+                      <span className="text-slate-400 font-semibold">({filteredAvailableClients.length})</span>
+                    </span>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className="px-3.5 py-1.5 rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0c1222] text-slate-600 dark:text-slate-300 font-bold text-xs flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-xs"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                        <span>Prev</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={currentPage >= totalPages}
+                        className="px-3.5 py-1.5 rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0c1222] text-slate-600 dark:text-slate-300 font-bold text-xs flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-xs"
+                      >
+                        <span>Next</span>
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* CLIENT SEGMENT SELECTOR */}
+              {/* SEGMENT SELECTOR */}
               {recipientSelection === 'segment' && (
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-500 uppercase tracking-wider block">
@@ -661,7 +861,7 @@ export default function WhatsAppComposer() {
               )}
             </div>
 
-            {/* 3. MESSAGE COMPOSER CARD */}
+            {/* 3. MESSAGE COMPOSER */}
             <div className="bg-white dark:bg-[#0c1222] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/60 shadow-sm space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -676,7 +876,6 @@ export default function WhatsAppComposer() {
                 </div>
               </div>
 
-              {/* LARGE TEXTAREA */}
               <div className="relative">
                 <textarea
                   rows={6}
@@ -687,7 +886,6 @@ export default function WhatsAppComposer() {
                 ></textarea>
               </div>
 
-              {/* DYNAMIC VARIABLES INSERTION */}
               <div className="space-y-2">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
                   Insert Personalized Variables
@@ -713,7 +911,6 @@ export default function WhatsAppComposer() {
                 </div>
               </div>
 
-              {/* 4. VALIDATION & WARNINGS SUMMARY BOX */}
               <div className="bg-slate-50 dark:bg-[#070b13] p-4 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-3">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
                   Automated Validation Checks
@@ -734,7 +931,6 @@ export default function WhatsAppComposer() {
                   </div>
                 </div>
 
-                {/* WARNINGS FOR MISSING NAMES OR INVALID PHONES */}
                 {(calculatedRecipients.missingNameCount > 0 || calculatedRecipients.invalidCount > 0) && (
                   <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
                     {calculatedRecipients.missingNameCount > 0 && (
@@ -771,24 +967,24 @@ export default function WhatsAppComposer() {
               </div>
 
               {/* TEST MESSAGE SECTION */}
-              <div className="p-4 bg-orange-500/10 border border-orange-500/30 rounded-3xl space-y-3">
-                <span className="text-[10px] font-black uppercase text-orange-600 dark:text-orange-400 block">
-                  Send Test Message Before Campaign
+              <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-3xl space-y-3">
+                <span className="text-[10px] font-black uppercase text-orange-600 dark:text-orange-400 block tracking-wider">
+                  SEND TEST MESSAGE BEFORE CAMPAIGN
                 </span>
 
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <input
                     type="text"
                     value={testPhoneNumber}
                     onChange={(e) => setTestPhoneNumber(e.target.value)}
                     placeholder="+92 300 XXXXXXX"
-                    className="flex-1 bg-white dark:bg-[#070b13] border border-orange-500/40 rounded-2xl py-2 px-3 text-xs font-bold outline-none"
+                    className="flex-1 bg-white dark:bg-[#070b13] border border-orange-500/30 rounded-full py-2 px-4 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-orange-500"
                   />
                   <button
                     type="button"
                     onClick={handleSendTestMessage}
                     disabled={testSending}
-                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-black text-xs rounded-2xl shadow-md transition-all shrink-0"
+                    className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-black text-xs rounded-full shadow-md transition-all shrink-0"
                   >
                     {testSending ? "Sending..." : "Send Test"}
                   </button>
@@ -806,10 +1002,10 @@ export default function WhatsAppComposer() {
 
           </div>
 
-          {/* RIGHT COLUMN: LIVE PREVIEW & SEND / SCHEDULE CONTROLS */}
+          {/* RIGHT COLUMN */}
           <div className="lg:col-span-5 space-y-6">
             
-            {/* LIVE PREVIEW CARD */}
+            {/* LIVE PREVIEW */}
             <div className="bg-white dark:bg-[#0c1222] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/60 shadow-sm space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -835,7 +1031,7 @@ export default function WhatsAppComposer() {
                 </select>
               </div>
 
-              {/* WHATSAPP LOOK-A-LIKE CHAT BOX */}
+              {/* WHATSAPP CHAT BOX */}
               <div className="bg-[#efeae2] dark:bg-[#0b141a] p-4 rounded-3xl border border-slate-300 dark:border-slate-800 shadow-inner space-y-3">
                 <div className="bg-[#075e54] text-white px-3 py-2 rounded-2xl flex items-center gap-2 shadow-sm">
                   <div className="h-7 w-7 rounded-full bg-white/20 flex items-center justify-center font-black text-xs">
@@ -846,7 +1042,6 @@ export default function WhatsAppComposer() {
                   </span>
                 </div>
 
-                {/* CHAT BUBBLE */}
                 <div className="bg-white dark:bg-[#202c33] text-slate-900 dark:text-slate-100 p-3.5 rounded-2xl rounded-tl-none max-w-[90%] shadow-md space-y-1 ml-1 border border-slate-200/50 dark:border-slate-700/50">
                   <p className="text-xs font-semibold whitespace-pre-wrap leading-relaxed">
                     {previewText}
@@ -858,7 +1053,7 @@ export default function WhatsAppComposer() {
               </div>
             </div>
 
-            {/* SCHEDULE OR SEND NOW CONTROL CARD */}
+            {/* SCHEDULE OR SEND NOW */}
             <div className="bg-white dark:bg-[#0c1222] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/60 shadow-sm space-y-4">
               <h2 className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <Clock className="h-5 w-5 text-orange-500" />
@@ -919,7 +1114,6 @@ export default function WhatsAppComposer() {
                 </div>
               )}
 
-              {/* ACTION REVIEW BUTTON */}
               <button
                 type="button"
                 onClick={() => setShowReviewModal(true)}
@@ -936,7 +1130,203 @@ export default function WhatsAppComposer() {
 
       </main>
 
-      {/* 8. REVIEW CAMPAIGN MODAL */}
+      {/* CLIENT SEGMENT SELECTION MODAL WITH 3 ANIMATED GLOWING TOP CARDS, EXACT MATCHED UI & 10 CARDS PAGINATION */}
+      {showSegmentModal && (
+        <div className="fixed inset-0 z-[180] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-white dark:bg-[#0d1527] border-2 border-orange-500 rounded-[32px] p-5 sm:p-6 max-w-xl w-full shadow-[0_0_40px_rgba(249,115,22,0.35)] space-y-5 my-auto max-h-[92vh] flex flex-col relative overflow-hidden">
+            
+            {/* MODAL HEADER */}
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800/80 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="h-11 w-11 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 text-white flex items-center justify-center shadow-lg shadow-orange-500/30 shrink-0">
+                  <Layers className="h-6 w-6 stroke-[2.2]" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight">
+                    Select Client Segment
+                  </h3>
+                  <p className="text-[11px] font-extrabold text-slate-400">
+                    Choose category to load clients ({modalAvailableClients.length} Available)
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowSegmentModal(false)}
+                className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-orange-500 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* 3 BEAUTIFUL, ANIMATED, GLOWING CATEGORY CARDS AT TOP */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-3 shrink-0">
+              
+              {/* VIP CLIENTS CARD */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory('VIP Clients');
+                  setSelectedSegment('VIP Clients');
+                }}
+                className={`p-3 rounded-2xl border-2 transition-all relative overflow-hidden text-center flex flex-col items-center justify-center gap-1.5 cursor-pointer ${
+                  activeCategory === 'VIP Clients'
+                    ? 'border-amber-500 bg-gradient-to-b from-amber-500/20 to-orange-500/10 shadow-[0_0_20px_rgba(245,158,11,0.5)] scale-105 animate-pulse'
+                    : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#070b13] hover:border-amber-500/50'
+                }`}
+              >
+                <Crown className={`h-5 w-5 ${activeCategory === 'VIP Clients' ? 'text-amber-500' : 'text-slate-400'}`} />
+                <span className="text-[11px] font-black text-slate-900 dark:text-white block">VIP Clients</span>
+                <span className="text-[9px] font-extrabold text-amber-500">
+                  {clients.filter(c => c.segment === 'VIP Clients').length} Clients
+                </span>
+              </button>
+
+              {/* REGULARS CARD */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory('Regulars');
+                  setSelectedSegment('Regulars');
+                }}
+                className={`p-3 rounded-2xl border-2 transition-all relative overflow-hidden text-center flex flex-col items-center justify-center gap-1.5 cursor-pointer ${
+                  activeCategory === 'Regulars'
+                    ? 'border-orange-500 bg-gradient-to-b from-orange-500/20 to-amber-500/10 shadow-[0_0_20px_rgba(249,115,22,0.5)] scale-105 animate-pulse'
+                    : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#070b13] hover:border-orange-500/50'
+                }`}
+              >
+                <Users className={`h-5 w-5 ${activeCategory === 'Regulars' ? 'text-orange-500' : 'text-slate-400'}`} />
+                <span className="text-[11px] font-black text-slate-900 dark:text-white block">Regulars</span>
+                <span className="text-[9px] font-extrabold text-orange-500">
+                  {clients.filter(c => c.segment === 'Regulars').length} Clients
+                </span>
+              </button>
+
+              {/* NEW LEADS CARD */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory('New Leads');
+                  setSelectedSegment('New Leads');
+                }}
+                className={`p-3 rounded-2xl border-2 transition-all relative overflow-hidden text-center flex flex-col items-center justify-center gap-1.5 cursor-pointer ${
+                  activeCategory === 'New Leads'
+                    ? 'border-sky-500 bg-gradient-to-b from-sky-500/20 to-blue-500/10 shadow-[0_0_20px_rgba(14,165,233,0.5)] scale-105 animate-pulse'
+                    : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#070b13] hover:border-sky-500/50'
+                }`}
+              >
+                <Sparkles className={`h-5 w-5 ${activeCategory === 'New Leads' ? 'text-sky-500' : 'text-slate-400'}`} />
+                <span className="text-[11px] font-black text-slate-900 dark:text-white block">New Leads</span>
+                <span className="text-[9px] font-extrabold text-sky-500">
+                  {clients.filter(c => c.segment === 'New Leads').length} Clients
+                </span>
+              </button>
+
+            </div>
+
+            {/* SEARCH INPUT */}
+            <div className="relative shrink-0">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-orange-500" />
+              <input
+                type="text"
+                placeholder="Filter clients by name or phone..."
+                value={modalSearchQuery}
+                onChange={(e) => setModalSearchQuery(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-[#070b13] border-2 border-orange-500/40 rounded-full py-2.5 pl-10 pr-4 text-xs font-extrabold text-slate-800 dark:text-slate-100 outline-none focus:border-orange-500"
+              />
+            </div>
+
+            {/* PRODUCT CARD STYLED CLIENT LIST CONTAINER (10 PER PAGE) */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 min-h-[220px]">
+              {modalPaginatedClients.map(client => {
+                const isSelected = tempSelectedClients.includes(client.id);
+
+                return (
+                  <div
+                    key={client.id}
+                    onClick={() => toggleModalClientSelection(client.id)}
+                    className={`p-3.5 rounded-full border-2 transition-all flex items-center justify-between cursor-pointer ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-orange-500/10 to-amber-500/10 border-orange-500 shadow-sm'
+                        : 'bg-white dark:bg-[#070b13] border-slate-200 dark:border-slate-800 hover:border-orange-400/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* SELECTION CIRCLE MATCHING REFERENCE SAMPLE */}
+                      <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                        isSelected ? 'border-orange-500 bg-orange-500 text-white' : 'border-slate-300 dark:border-slate-700'
+                      }`}>
+                        {isSelected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
+                      </div>
+
+                      <div>
+                        <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white block leading-tight">
+                          {client.name || 'Unnamed Client'}
+                        </span>
+                        <span className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase block">
+                          PHONE: {client.phone}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="px-3 py-1 rounded-full bg-orange-500 text-white font-black text-xs shadow-sm shrink-0">
+                      {activeCategory}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {modalPaginatedClients.length === 0 && (
+                <div className="py-12 text-center text-xs font-extrabold text-slate-400">
+                  Is Category ({activeCategory}) me aur koi clients save nahi hone bache.
+                </div>
+              )}
+            </div>
+
+            {/* MODAL FOOTER WITH OK BUTTON & PAGINATION */}
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 space-y-3 shrink-0">
+              
+              {/* MODAL PAGINATION CONTROLS */}
+              <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-1">
+                <span>Page {modalCurrentPage} of {modalTotalPages} ({modalAvailableClients.length} Total)</span>
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setModalCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={modalCurrentPage === 1}
+                    className="px-3 py-1 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#070b13] text-slate-700 dark:text-slate-300 disabled:opacity-40"
+                  >
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalCurrentPage(p => Math.min(modalTotalPages, p + 1))}
+                    disabled={modalCurrentPage >= modalTotalPages}
+                    className="px-3 py-1 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#070b13] text-slate-700 dark:text-slate-300 disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+
+              {/* STYLED OK / SAVE BUTTON MATCHING REFERENCE IMAGE SAMPLE */}
+              <button
+                type="button"
+                onClick={handleSaveModalSelection}
+                className="w-full py-3.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-black text-sm uppercase tracking-wider rounded-full shadow-[0_4px_20px_rgba(249,115,22,0.4)] transition-all flex items-center justify-center gap-2"
+              >
+                <Check className="h-5 w-5 stroke-[3]" />
+                <span>OK</span>
+              </button>
+
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* REVIEW MODAL */}
       {showReviewModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
           <div className="bg-white dark:bg-[#0c1222] border-2 border-orange-500 rounded-[32px] p-6 max-w-lg w-full shadow-[0_0_35px_rgba(249,115,22,0.35)] space-y-4 my-auto relative">
@@ -995,7 +1385,7 @@ export default function WhatsAppComposer() {
         </div>
       )}
 
-      {/* 10. FINAL CONFIRMATION DIALOG */}
+      {/* CONFIRM DIALOG */}
       {showConfirmDialog && (
         <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
           <div className="bg-white dark:bg-[#0c1222] border-2 border-orange-500 rounded-3xl p-6 max-w-sm w-full shadow-[0_0_30px_rgba(249,115,22,0.4)] space-y-4 text-center">
@@ -1068,9 +1458,9 @@ export default function WhatsAppComposer() {
         </div>
       )}
 
-      {/* FIXED BOTTOM NAVIGATION BAR WITH PERFECT MOBILE LAYOUT */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 px-3 pb-3 pt-1 bg-gradient-to-t from-[#f8fafc] via-[#f8fafc]/90 to-transparent dark:from-[#070b13] dark:via-[#070b13]/90 pointer-events-none">
-        <nav className="mx-auto max-w-md bg-white/95 dark:bg-[#0c1222]/95 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-3xl shadow-xl px-2 py-1.5 flex items-center justify-around pointer-events-auto">
+      {/* FIXED BOTTOM NAVIGATION BAR */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4 pt-2 bg-gradient-to-t from-[#f8fafc] via-[#f8fafc]/80 to-transparent dark:from-[#070b13] dark:via-[#070b13]/80 pointer-events-none">
+        <nav className="mx-auto max-w-lg bg-white dark:bg-[#0c1222] border border-slate-200/90 dark:border-slate-800 rounded-[35px] shadow-[0_8px_30px_rgba(0,0,0,0.08)] px-3 py-2 flex items-center justify-between pointer-events-auto">
           {navigationTabs.map((tab) => {
             const IconComponent = tab.icon;
             const isActive = activeTab === tab.id;
@@ -1080,17 +1470,17 @@ export default function WhatsAppComposer() {
                 key={tab.id}
                 to={tab.href}
                 onClick={() => setActiveTab(tab.id)}
-                className="flex flex-col items-center justify-center flex-1 py-1 group"
+                className="flex flex-col items-center justify-center flex-1 transition-all group"
               >
-                <div className={`p-2 rounded-full transition-all duration-300 flex items-center justify-center ${
+                <div className={`p-2.5 rounded-full transition-all duration-300 flex items-center justify-center ${
                   isActive 
-                    ? 'bg-orange-500 text-white shadow-md shadow-orange-500/40 scale-105' 
-                    : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                    ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30' 
+                    : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'
                 }`}>
-                  <IconComponent className="h-4 w-4" />
+                  <IconComponent className="h-5 w-5 stroke-[2.2]" />
                 </div>
-                <span className={`text-[9px] font-black mt-0.5 transition-all truncate max-w-[64px] text-center ${
-                  isActive ? 'text-orange-500' : 'text-slate-400'
+                <span className={`text-[10px] font-extrabold mt-1 transition-all text-center ${
+                  isActive ? 'text-orange-500 font-black' : 'text-slate-400'
                 }`}>
                   {tab.label}
                 </span>

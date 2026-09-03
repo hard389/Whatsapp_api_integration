@@ -12,11 +12,11 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import SharedDocumentPage from "@/components/SharedDocumentPage";
 
-// Main Dashboard Pages (Updated to match exact file names)
+// Main Dashboard Pages
 import Dashboard from "./pages/Dashboard";
 import ImportPage from "./pages/import";
-import Attendance from "./pages/composer";
-import Fees from "./pages/fees";
+import Attendance from "./pages/composer"; // Composer component imported as Attendance
+import Fees from "./pages/clients";
 import Reports from "./pages/reports";  
 import Analytics from "./pages/analytics";
 import Notes from "./pages/notes";
@@ -25,7 +25,6 @@ import Quiz from "./pages/quiz";
 import Settings from "./pages/settings";
 import ClassesPage from "./pages/ClassesPage";
 import ExtraFee from "./components/fees/extrafee";
-import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
@@ -56,8 +55,13 @@ const App = () => (
                     <Route path="dashboard" element={<Dashboard />} />
                     <Route path="import" element={<ImportPage />} />
                     <Route path="departments" element={<Navigate to="/import" replace />} />
-                    <Route path="attendance" element={<Attendance />} />
-                    <Route path="fees" element={<Fees />} />
+                    
+                    {/* FIXED: /composer path add kar diya aur /attendance redirect rakha */}
+                    <Route path="composer" element={<Attendance />} />
+                    <Route path="attendance" element={<Navigate to="/composer" replace />} />
+                    
+                    <Route path="clients" element={<Fees />} />
+                     <Route path="fees" element={<Navigate to="/clients" replace />} />
                     <Route path="reports" element={<Reports />} />
                     <Route path="analytics" element={<Analytics />} />
                     <Route path="notes" element={<Notes />} />
