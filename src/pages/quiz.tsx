@@ -22,27 +22,22 @@ import {
   Send,
   Users,
   Settings,
-  Check,
-  Sparkles,
-  CheckCircle2,
   AlertTriangle,
   X,
   ArrowLeft,
   Crown,
-  Lock,
-  Key,
   Smartphone,
   User,
   ShieldCheck,
   Save,
-  Globe,
-  Database,
-  Radio,
+  Key,
   Eye,
   EyeOff,
-  Copy
+  Copy,
+  Check
 } from 'lucide-react';
 
+// Env variables integrated without hardcoding
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -69,7 +64,7 @@ export default function ProfileSettingsPage() {
   // Profile Form States
   const [displayName, setDisplayName] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('');
-  const [businessName, setBusinessName] = useState('My WhatsApp Agency');
+  const [businessName, setBusinessName] = useState('');
   
   // WhatsApp API & Cloud Gateway Configuration States
   const [metaPhoneId, setMetaPhoneId] = useState('');
@@ -86,6 +81,7 @@ export default function ProfileSettingsPage() {
   const [successToastMsg, setSuccessToastMsg] = useState('');
   const [showErrorToast, setShowErrorToast] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [showSaveModal, setShowSaveModal] = useState(false);
 
   // 1. Auth Observer & Data Loader
   useEffect(() => {
@@ -105,11 +101,11 @@ export default function ProfileSettingsPage() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Fetch Existing Profile & Settings from Firestore
+  // 2. Fetch Existing Settings Document directly under users/{email}/settings/config
   const loadUserSettings = async (email: string) => {
     try {
-      const userDocRef = doc(db, 'users', email, 'settings', 'config');
-      const docSnap = await getDoc(userDocRef);
+      const settingsDocRef = doc(db, 'users', email, 'settings', 'config');
+      const docSnap = await getDoc(settingsDocRef);
 
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -122,12 +118,6 @@ export default function ProfileSettingsPage() {
         if (data.webhookVerifyToken) setWebhookVerifyToken(data.webhookVerifyToken);
         if (data.apiEnvironment) setApiEnvironment(data.apiEnvironment);
         if (data.dailyRateLimit) setDailyRateLimit(data.dailyRateLimit);
-      } else {
-        // Fallback default placeholder data for immediate usage
-        setWhatsappNumber('+92 300 1234567');
-        setMetaPhoneId('109823948201948');
-        setMetaWabaId('982103948120394');
-        setMetaAccessToken('EAAG...meta_live_access_token');
       }
     } catch (err) {
       console.error("Firestore Settings Fetch Error:", err);
@@ -147,7 +137,7 @@ export default function ProfileSettingsPage() {
     setTimeout(() => setShowErrorToast(false), 3500);
   };
 
-  // 3. Save Updated Profile & API Settings
+  // 3. Save Updated Profile & API Settings into Firestore Document
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -155,14 +145,13 @@ export default function ProfileSettingsPage() {
     const targetEmail = currentUserEmail || FALLBACK_USER_EMAIL;
 
     try {
-      // Update Auth Profile Display Name if logged in
       if (auth.currentUser) {
         await updateProfile(auth.currentUser, { displayName });
       }
 
-      // Save to Firestore User Document Configuration
-      const userDocRef = doc(db, 'users', targetEmail, 'settings', 'config');
-      await setDoc(userDocRef, {
+      // Exact reference path: users -> {email} -> settings -> config
+      const settingsDocRef = doc(db, 'users', targetEmail, 'settings', 'config');
+      await setDoc(settingsDocRef, {
         displayName,
         whatsappNumber,
         businessName,
@@ -175,7 +164,12 @@ export default function ProfileSettingsPage() {
         updatedAt: new Date().toISOString()
       }, { merge: true });
 
-      triggerSuccess("Settings & API Keys updated successfully!");
+      // Show Image Modal Notification
+      setShowSaveModal(true);
+      setTimeout(() => {
+        setShowSaveModal(false);
+      }, 3000);
+
     } catch (err) {
       console.error("Save Settings Error:", err);
       triggerError("Failed to save settings. Please try again.");
@@ -200,7 +194,25 @@ export default function ProfileSettingsPage() {
   return (
     <div className={`min-h-screen bg-[#f8fafc] dark:bg-[#070b13] text-slate-900 dark:text-slate-100 transition-colors duration-300 pb-36 ${isDark ? 'dark' : ''}`}>
 
-      {/* Error Toast */}
+      {/* Save Success Modal Notification */}
+      {showSaveModal && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-[#0c1222] border-2 border-[#10b981] rounded-3xl p-6 sm:p-8 max-w-sm w-full text-center shadow-2xl flex flex-col items-center gap-4 transition-all scale-100 animate-in zoom-in-95">
+            <div className="h-16 w-16 rounded-full bg-[#10b981]/15 border border-[#10b981]/30 flex items-center justify-center text-[#10b981]">
+              <Check className="h-8 w-8 stroke-[3]" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
+                Record Saved
+              </h3>
+              <p className="text-xs font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+                Data updated & re-validated successfully!
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showErrorToast && (
         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[110] bg-rose-600 text-white font-extrabold text-xs sm:text-sm px-5 py-3 rounded-2xl shadow-[0_0_30px_rgba(225,19,72,0.5)] flex items-center gap-3 border border-rose-400 animate-bounce">
           <AlertTriangle className="h-5 w-5 shrink-0" />
@@ -211,15 +223,13 @@ export default function ProfileSettingsPage() {
         </div>
       )}
 
-      {/* Success Toast */}
       {showSuccessToast && (
         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[110] bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black text-xs sm:text-sm px-6 py-3.5 rounded-2xl shadow-[0_0_30px_rgba(16,185,129,0.6)] flex items-center gap-3 border border-emerald-300">
-          <CheckCircle2 className="h-5 w-5 shrink-0 animate-bounce" />
+          <Check className="h-5 w-5 shrink-0 animate-bounce" />
           <span>{successToastMsg}</span>
         </div>
       )}
 
-      {/* Top Navbar */}
       <header className="w-full bg-white/90 dark:bg-[#070b13]/90 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800/60 sticky top-0 z-40">
         <div className="mx-auto max-w-7xl flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
@@ -257,10 +267,8 @@ export default function ProfileSettingsPage() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8 space-y-6">
 
-        {/* Hero Section Banner */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-br from-amber-50/90 via-white to-orange-50/50 dark:from-[#0c1222] dark:via-[#0e162a] dark:to-[#070b13] p-5 sm:p-7 rounded-3xl border-2 border-orange-500/80 shadow-[0_0_25px_rgba(249,115,22,0.2)]">
           <div className="space-y-1">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/30">
@@ -295,10 +303,8 @@ export default function ProfileSettingsPage() {
         <form onSubmit={handleSaveSettings} className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-            {/* Left Column - User & Business Identity */}
             <div className="lg:col-span-6 space-y-6">
 
-              {/* Personal Information */}
               <div className="bg-white dark:bg-[#0c1222] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/60 shadow-sm space-y-4">
                 <h2 className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
                   <User className="h-5 w-5 text-orange-500" />
@@ -308,7 +314,7 @@ export default function ProfileSettingsPage() {
                 <div className="space-y-4">
                   <div>
                     <label className="text-xs font-black text-slate-500 uppercase tracking-wider block mb-1">
-                      Account Email (Primary Firestore Key)
+                      Account Email
                     </label>
                     <input
                       type="text"
@@ -347,7 +353,6 @@ export default function ProfileSettingsPage() {
                 </div>
               </div>
 
-              {/* WhatsApp Sender Configuration */}
               <div className="bg-white dark:bg-[#0c1222] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/60 shadow-sm space-y-4">
                 <h2 className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
                   <Smartphone className="h-5 w-5 text-orange-500" />
@@ -370,9 +375,6 @@ export default function ProfileSettingsPage() {
                         className="w-full bg-slate-50 dark:bg-[#070b13] border border-slate-200 dark:border-slate-800 rounded-2xl py-3 pl-11 pr-4 text-xs font-extrabold text-slate-800 dark:text-slate-100 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
                       />
                     </div>
-                    <span className="text-[10px] font-semibold text-slate-400 mt-1 block">
-                      This number will be registered as your official outbound engine sender identity.
-                    </span>
                   </div>
 
                   <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl space-y-2">
@@ -381,7 +383,7 @@ export default function ProfileSettingsPage() {
                       <span>Number Status & Verification</span>
                     </span>
                     <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300 leading-relaxed">
-                      Make sure your Meta Business Account has verified this phone number to prevent broadcast throttling or blockages.
+                      Make sure your Meta Business Account has verified this phone number.
                     </p>
                   </div>
                 </div>
@@ -389,7 +391,6 @@ export default function ProfileSettingsPage() {
 
             </div>
 
-            {/* Right Column - Official Meta WhatsApp API Configuration */}
             <div className="lg:col-span-6 space-y-6">
 
               <div className="bg-white dark:bg-[#0c1222] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/60 shadow-sm space-y-4">
@@ -478,19 +479,19 @@ export default function ProfileSettingsPage() {
                     <label className="text-xs font-black text-slate-500 uppercase tracking-wider block mb-1">
                       Webhook Verification Secret
                     </label>
-                    <div className="flex gap-2">
+                    <div className="relative w-full">
                       <input
                         type="text"
                         value={webhookVerifyToken}
                         onChange={(e) => setWebhookVerifyToken(e.target.value)}
-                        className="flex-1 bg-slate-50 dark:bg-[#070b13] border border-slate-200 dark:border-slate-800 rounded-2xl py-3 px-4 text-xs font-extrabold text-slate-800 dark:text-slate-100 outline-none focus:border-orange-500"
+                        className="w-full bg-slate-50 dark:bg-[#070b13] border border-slate-200 dark:border-slate-800 rounded-2xl py-3 pl-4 pr-24 text-xs font-extrabold text-slate-800 dark:text-slate-100 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
                       />
                       <button
                         type="button"
                         onClick={() => copyToClipboard(webhookVerifyToken, "Webhook Token")}
-                        className="px-4 bg-slate-100 dark:bg-slate-800 hover:bg-orange-500 hover:text-white rounded-2xl font-black text-xs transition-all flex items-center gap-1 shrink-0"
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-orange-500 hover:text-white rounded-xl font-black text-[11px] transition-all flex items-center gap-1 shrink-0 text-slate-700 dark:text-slate-200"
                       >
-                        <Copy className="h-4 w-4" />
+                        <Copy className="h-3.5 w-3.5" />
                         <span>Copy</span>
                       </button>
                     </div>
@@ -514,7 +515,6 @@ export default function ProfileSettingsPage() {
                 </div>
               </div>
 
-              {/* Submit / Action Button */}
               <button
                 type="submit"
                 disabled={isSaving}
@@ -531,7 +531,6 @@ export default function ProfileSettingsPage() {
 
       </main>
 
-      {/* Persistent Bottom Floating Navigation Bar */}
       <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4 pt-2 bg-gradient-to-t from-[#f8fafc] via-[#f8fafc]/80 to-transparent dark:from-[#070b13] dark:via-[#070b13]/80 pointer-events-none">
         <nav className="mx-auto max-w-lg bg-white dark:bg-[#0c1222] border border-slate-200/90 dark:border-slate-800 rounded-[35px] shadow-[0_8px_30px_rgba(0,0,0,0.08)] px-3 py-2 flex items-center justify-between pointer-events-auto">
           {navigationTabs.map((tab) => {
