@@ -1237,7 +1237,7 @@ export default function WhatsAppComposer() {
         </div>
       )}
 
-      {/* CLIENT SEGMENT SELECTION MODAL */}
+      {/* CLIENT SEGMENT SELECTION MODAL (MATCHES EXACT ATTACHED DESIGN) */}
       {showSegmentModal && (
         <div className="fixed inset-0 z-[180] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
           <div className="bg-white dark:bg-[#0d1527] border-2 border-orange-500 rounded-[32px] p-5 sm:p-6 max-w-xl w-full shadow-[0_0_40px_rgba(249,115,22,0.35)] space-y-5 my-auto max-h-[92vh] flex flex-col relative overflow-hidden">
@@ -1340,7 +1340,7 @@ export default function WhatsAppComposer() {
               />
             </div>
 
-            {/* CLIENT LIST CONTAINER (PAGINATION OF 5) */}
+            {/* CLIENT LIST CONTAINER */}
             <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 min-h-[220px]">
               {modalPaginatedClients.map(client => {
                 const isSelected = tempSelectedClients.includes(client.id);
@@ -1370,11 +1370,6 @@ export default function WhatsAppComposer() {
                           PHONE: {client.phone}
                         </span>
                       </div>
-                    </div>
-
-                    <div className="px-3 py-1 rounded-full bg-orange-500 text-white font-black text-xs shadow-sm shrink-0 flex items-center gap-1">
-                      <Plus className="h-3 w-3 stroke-[3]" />
-                      <span>Add Favourite</span>
                     </div>
                   </div>
                 );
