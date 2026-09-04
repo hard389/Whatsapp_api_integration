@@ -7,7 +7,7 @@ import {
   onSnapshot,
   doc, 
   updateDoc,
-  addDoc
+  setDoc
 } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import {
@@ -37,7 +37,10 @@ import {
   Crown,
   UserCheck,
   ChevronDown,
-  Layers
+  Layers,
+  Image,
+  Paperclip,
+  UploadCloud
 } from 'lucide-react';
 
 // Firebase Configuration
@@ -65,29 +68,13 @@ interface Client {
   isFavorite?: boolean;
 }
 
-interface CampaignData {
-  id?: string;
-  name: string;
-  description: string;
-  recipientsType: 'all' | 'selected' | 'segment';
-  selectedClientIds: string[];
-  selectedSegment: string;
-  message: string;
-  scheduledDate: string;
-  scheduledTime: string;
-  timezone: string;
-  isScheduled: boolean;
-  status: 'draft' | 'scheduled' | 'processing' | 'completed';
-  createdAt: string;
-}
-
 export default function WhatsAppComposer() {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>('alitahir243715@gmail.com');
   const [isDark, setIsDark] = useState(false);
   const [activeTab, setActiveTab] = useState('composer');
 
-  // Dynamic Realtime Database Clients State
+  // Dynamic Database Clients State
   const [clients, setClients] = useState<Client[]>([]);
   const [loadingClients, setLoadingClients] = useState(true);
 
@@ -99,7 +86,7 @@ export default function WhatsAppComposer() {
   const modalItemsPerPage = 10;
   const [tempSelectedClients, setTempSelectedClients] = useState<string[]>([]);
 
-  // Main Pagination State for Client Cards outside modal
+  // Main Pagination State for Client Cards
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 3;
 
@@ -110,10 +97,13 @@ export default function WhatsAppComposer() {
   const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
   const [selectedSegment, setSelectedSegment] = useState<string>('VIP Clients');
   const [clientSearchQuery, setClientSearchQuery] = useState('');
-  
+
+  // Image Upload State in Message Composer
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+
   // Message Composer State
   const [message, setMessage] = useState('Assalam o Alaikum {{name}},\n\nWe hope you are doing well.\n\nThank you for being our valued client.');
-  
+
   // Preview & Test States
   const [previewClientId, setPreviewClientId] = useState<string>('');
   const [testPhoneNumber, setTestPhoneNumber] = useState('+92 300 1234567');
@@ -125,13 +115,13 @@ export default function WhatsAppComposer() {
   const [scheduleDate, setScheduleDate] = useState('2026-09-05');
   const [scheduleTime, setScheduleTime] = useState('10:00');
   const [timezone] = useState('Asia/Karachi');
-  
+
   // Modals & UI States
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showInvalidModal, setShowInvalidModal] = useState(false);
   const [showMissingNamesModal, setShowMissingNamesModal] = useState(false);
-  
+
   // Active Campaign Execution Progress View
   const [activeCampaign, setActiveCampaign] = useState<any | null>(null);
   const [sendingProgress, setSendingProgress] = useState({
@@ -154,21 +144,17 @@ export default function WhatsAppComposer() {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setCurrentUser(user);
-        setCurrentUserEmail(user.email || user.uid);
-      } else {
-        setCurrentUser(null);
-        setCurrentUserEmail('alitahir243715@gmail.com');
+        if (user.email) setCurrentUserEmail(user.email);
       }
     });
     return () => unsubscribe();
   }, []);
 
-  // 2. Realtime Database Synchronization from Firestore active user path: users/{userId}/clients
+  // 2. Realtime Database Synchronization from user's clients path: users/{email}/clients
   useEffect(() => {
-    const targetUserId = currentUser?.uid || 'rcNb6A48ANTEa8s1apeHyL6ijyU2'; 
+    const emailKey = currentUserEmail || 'alitahir243715@gmail.com';
+    const clientsCollectionRef = collection(db, 'users', emailKey, 'clients');
 
-    const clientsCollectionRef = collection(db, 'users', targetUserId, 'clients');
-    
     setLoadingClients(true);
     const unsubscribeSnapshot = onSnapshot(clientsCollectionRef, 
       (snapshot) => {
@@ -178,7 +164,7 @@ export default function WhatsAppComposer() {
           phone: docSnap.data().phone || docSnap.data().phoneNumber || '',
           isValid: docSnap.data().isValid !== undefined ? docSnap.data().isValid : true,
           optedOut: docSnap.data().optedOut || false,
-          segment: docSnap.data().segment || 'VIP Clients',
+          segment: docSnap.data().segment || '',
           isFavorite: docSnap.data().isFavorite || false,
         }));
 
@@ -193,16 +179,14 @@ export default function WhatsAppComposer() {
     );
 
     return () => unsubscribeSnapshot();
-  }, [currentUser]);
+  }, [currentUserEmail]);
 
-  // Sync default preview client when clients list changes
   useEffect(() => {
     if (clients.length > 0 && !previewClientId) {
       setPreviewClientId(clients[0].id);
     }
   }, [clients, previewClientId]);
 
-  // Reset pages on search changes
   useEffect(() => {
     setCurrentPage(1);
   }, [clientSearchQuery]);
@@ -211,42 +195,51 @@ export default function WhatsAppComposer() {
     setModalCurrentPage(1);
   }, [modalSearchQuery, activeCategory]);
 
-  // Handle Client Selection / Favorite Action
+  // Image File Picker Handler
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setUploadedImage(reader.result as string);
+        triggerSuccess("Image uploaded to composer!");
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSelectCardToFavorite = async (client: Client) => {
-    const targetUserId = currentUser?.uid || 'rcNb6A48ANTEa8s1apeHyL6ijyU2';
-    
+    const emailKey = currentUserEmail || 'alitahir243715@gmail.com';
+
     if (!selectedClientIds.includes(client.id)) {
       setSelectedClientIds(prev => [...prev, client.id]);
     }
 
     try {
-      const clientDocRef = doc(db, 'users', targetUserId, 'clients', client.id);
+      const clientDocRef = doc(db, 'users', emailKey, 'clients', client.id);
       await updateDoc(clientDocRef, {
         isFavorite: true,
         segment: activeCategory
       });
       triggerSuccess(`${client.name || 'Client'} saved to ${activeCategory}!`);
     } catch (err) {
-      console.error(err);
       triggerSuccess(`${client.name || 'Client'} selected!`);
     }
   };
 
-  // Toggle Selection inside Modal
   const toggleModalClientSelection = (clientId: string) => {
     setTempSelectedClients(prev => 
       prev.includes(clientId) ? prev.filter(id => id !== clientId) : [...prev, clientId]
     );
   };
 
-  // Save Modal Client Selections to Firebase & UI
+  // Save Selected Modal Clients & Create Category Record under users/{email}/import_history
   const handleSaveModalSelection = async () => {
-    const targetUserId = currentUser?.uid || 'rcNb6A48ANTEa8s1apeHyL6ijyU2';
-    
+    const emailKey = currentUserEmail || 'alitahir243715@gmail.com';
+
     try {
-      // Update each selected client in Firestore to belong to active category and mark as favorite
       const updatePromises = tempSelectedClients.map(clientId => {
-        const clientDocRef = doc(db, 'users', targetUserId, 'clients', clientId);
+        const clientDocRef = doc(db, 'users', emailKey, 'clients', clientId);
         return updateDoc(clientDocRef, {
           segment: activeCategory,
           isFavorite: true
@@ -255,10 +248,18 @@ export default function WhatsAppComposer() {
 
       await Promise.all(updatePromises);
 
-      // Append to main selection state
+      // Save category document inside import_history path
+      const historyDocRef = doc(db, 'users', emailKey, 'import_history', `${activeCategory}_${Date.now()}`);
+      await setDoc(historyDocRef, {
+        categoryName: activeCategory,
+        savedClientsCount: tempSelectedClients.length,
+        savedClientIds: tempSelectedClients,
+        createdAt: new Date().toISOString()
+      });
+
       setSelectedClientIds(prev => Array.from(new Set([...prev, ...tempSelectedClients])));
-      
-      triggerSuccess(`Successfully added clients to ${activeCategory}!`);
+
+      triggerSuccess(`Clients successfully saved in category ${activeCategory}!`);
       setShowSegmentModal(false);
       setTempSelectedClients([]);
     } catch (err) {
@@ -267,24 +268,28 @@ export default function WhatsAppComposer() {
     }
   };
 
-  // Remove Card from Selection / Unfavorite
   const handleRemoveFavoriteCard = async (client: Client) => {
-    const targetUserId = currentUser?.uid || 'rcNb6A48ANTEa8s1apeHyL6ijyU2';
+    const emailKey = currentUserEmail || 'alitahir243715@gmail.com';
 
     setSelectedClientIds(prev => prev.filter(id => id !== client.id));
 
     try {
-      const clientDocRef = doc(db, 'users', targetUserId, 'clients', client.id);
+      const clientDocRef = doc(db, 'users', emailKey, 'clients', client.id);
       await updateDoc(clientDocRef, {
         isFavorite: false
       });
-      triggerSuccess("Client removed from list.");
+      triggerSuccess("Client removed from favorite list.");
     } catch (err) {
       console.error(err);
     }
   };
 
-  // Filtering Recipient Calculations
+  const toggleAllClientCheck = (clientId: string) => {
+    setSelectedClientIds(prev =>
+      prev.includes(clientId) ? prev.filter(id => id !== clientId) : [...prev, clientId]
+    );
+  };
+
   const calculatedRecipients = useMemo(() => {
     let filtered = [...clients];
 
@@ -313,7 +318,6 @@ export default function WhatsAppComposer() {
     };
   }, [clients, recipientSelection, selectedClientIds, selectedSegment]);
 
-  // Filtered Clients for Outer Pagination Grid
   const filteredAvailableClients = useMemo(() => {
     return clients
       .filter(c => !(c.isFavorite || selectedClientIds.includes(c.id)))
@@ -321,18 +325,19 @@ export default function WhatsAppComposer() {
   }, [clients, selectedClientIds, clientSearchQuery]);
 
   const totalPages = Math.ceil(filteredAvailableClients.length / itemsPerPage) || 1;
-  
+
   const currentPaginatedClients = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return filteredAvailableClients.slice(start, start + itemsPerPage);
   }, [filteredAvailableClients, currentPage, itemsPerPage]);
 
-  // Filtered Clients for Segment Modal (Auto removes already saved clients, paginated at 10)
+  // Exclude clients that were already saved in any category or previously selected
   const modalAvailableClients = useMemo(() => {
     return clients
-      .filter(c => !(c.isFavorite && c.segment === activeCategory) && !selectedClientIds.includes(c.id))
+      .filter(c => !c.segment || c.segment === '')
+      .filter(c => !selectedClientIds.includes(c.id))
       .filter(c => c.name.toLowerCase().includes(modalSearchQuery.toLowerCase()) || c.phone.includes(modalSearchQuery));
-  }, [clients, selectedClientIds, activeCategory, modalSearchQuery]);
+  }, [clients, selectedClientIds, modalSearchQuery]);
 
   const modalTotalPages = Math.ceil(modalAvailableClients.length / modalItemsPerPage) || 1;
 
@@ -341,7 +346,6 @@ export default function WhatsAppComposer() {
     return modalAvailableClients.slice(start, start + modalItemsPerPage);
   }, [modalAvailableClients, modalCurrentPage, modalItemsPerPage]);
 
-  // Message Statistics
   const characterCount = message.length;
   const wordCount = message.trim() ? message.trim().split(/\s+/).length : 0;
 
@@ -443,7 +447,7 @@ export default function WhatsAppComposer() {
 
   return (
     <div className={`min-h-screen bg-[#f8fafc] dark:bg-[#070b13] text-slate-900 dark:text-slate-100 transition-colors duration-300 pb-36 ${isDark ? 'dark' : ''}`}>
-      
+
       {/* ERROR TOAST */}
       {showErrorToast && (
         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[110] bg-rose-600 text-white font-extrabold text-xs sm:text-sm px-5 py-3 rounded-2xl shadow-[0_0_30px_rgba(225,19,72,0.5)] flex items-center gap-3 border border-rose-400 animate-bounce">
@@ -502,8 +506,8 @@ export default function WhatsAppComposer() {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8 space-y-6">
-        
-        {/* HERO TITLE SECTION WITH CUSTOM CLIENT SEGMENT BUTTON */}
+
+        {/* HERO HEADER SECTION WITH CATEGORY SELECTOR BUTTON */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-br from-amber-50/90 via-white to-orange-50/50 dark:from-[#0c1222] dark:via-[#0e162a] dark:to-[#070b13] p-5 sm:p-7 rounded-3xl border-2 border-orange-500/80 shadow-[0_0_25px_rgba(249,115,22,0.2)]">
           <div className="space-y-1">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/30">
@@ -518,7 +522,6 @@ export default function WhatsAppComposer() {
             </p>
           </div>
 
-          {/* CLIENT SEGMENT BUTTON (REPLACED SAVE SELECTION BUTTON) */}
           <div className="flex flex-col gap-1 items-start sm:items-end">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 px-1">
               SELECT CLIENT SEGMENT
@@ -528,7 +531,7 @@ export default function WhatsAppComposer() {
               className="w-full sm:w-64 bg-slate-50/90 dark:bg-[#070b13] border-2 border-orange-500 rounded-full py-2.5 px-5 flex items-center justify-between hover:bg-orange-50 dark:hover:bg-slate-900 transition-all shadow-md group"
             >
               <span className="font-black text-xs text-slate-800 dark:text-slate-100 group-hover:text-orange-500 transition-colors">
-                {selectedSegment || 'Regulars'}
+                {activeCategory}
               </span>
               <ChevronDown className="h-4 w-4 text-orange-500 group-hover:translate-y-0.5 transition-transform" />
             </button>
@@ -587,10 +590,10 @@ export default function WhatsAppComposer() {
 
         {/* 2-COLUMN LAYOUT */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
+
           {/* LEFT COLUMN */}
           <div className="lg:col-span-7 space-y-6">
-            
+
             {/* 1. CAMPAIGN DETAILS */}
             <div className="bg-white dark:bg-[#0c1222] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/60 shadow-sm space-y-4">
               <h2 className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -733,32 +736,65 @@ export default function WhatsAppComposer() {
                 </div>
               </div>
 
-              {/* ALL CLIENTS SUMMARY */}
+              {/* ALL CLIENTS SELECTION SUMMARY & TICK LIST */}
               {recipientSelection === 'all' && (
-                <div className="bg-slate-50 dark:bg-[#070b13] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2 text-xs font-bold">
-                  <div className="flex justify-between text-slate-500">
-                    <span>Total Clients in Database:</span>
-                    <span className="font-extrabold text-slate-800 dark:text-slate-100">
-                      {loadingClients ? 'Loading...' : clients.length}
+                <div className="space-y-3">
+                  <div className="bg-slate-50 dark:bg-[#070b13] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2 text-xs font-bold">
+                    <div className="flex justify-between text-slate-500">
+                      <span>Total Clients in Database:</span>
+                      <span className="font-extrabold text-slate-800 dark:text-slate-100">
+                        {loadingClients ? 'Loading...' : clients.length}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-emerald-600">
+                      <span>Valid Numbers:</span>
+                      <span className="font-extrabold">{clients.filter(c => c.isValid !== false).length}</span>
+                    </div>
+                    <div className="flex justify-between text-rose-500">
+                      <span>Opted Out:</span>
+                      <span className="font-extrabold">{clients.filter(c => c.optedOut).length}</span>
+                    </div>
+                    <div className="border-t border-slate-200 dark:border-slate-800 pt-2 flex justify-between text-orange-500 font-black text-sm">
+                      <span>Recipients to receive message:</span>
+                      <span>{calculatedRecipients.finalCount}</span>
+                    </div>
+                  </div>
+
+                  {/* ALL CLIENTS SHOWING WITH TICK OPTION */}
+                  <div className="p-3 bg-slate-50/50 dark:bg-[#070b13]/50 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block px-1">
+                      ALL CLIENTS WITH TICK MARK SELECTION
                     </span>
-                  </div>
-                  <div className="flex justify-between text-emerald-600">
-                    <span>Valid Numbers:</span>
-                    <span className="font-extrabold">{clients.filter(c => c.isValid !== false).length}</span>
-                  </div>
-                  <div className="flex justify-between text-rose-500">
-                    <span>Opted Out:</span>
-                    <span className="font-extrabold">{clients.filter(c => c.optedOut).length}</span>
-                  </div>
-                  <div className="border-t border-slate-200 dark:border-slate-800 pt-2 flex justify-between text-orange-500 font-black text-sm">
-                    <span>Recipients to receive message:</span>
-                    <span>{calculatedRecipients.finalCount}</span>
+                    <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                      {clients.map(client => {
+                        const isChecked = selectedClientIds.includes(client.id) || recipientSelection === 'all';
+                        return (
+                          <div
+                            key={client.id}
+                            onClick={() => toggleAllClientCheck(client.id)}
+                            className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0c1222] flex items-center justify-between cursor-pointer hover:border-orange-500/50 transition-all"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className={`h-5 w-5 rounded-md border-2 flex items-center justify-center transition-colors ${
+                                isChecked ? 'bg-orange-500 border-orange-500 text-white' : 'border-slate-300 dark:border-slate-700'
+                              }`}>
+                                {isChecked && <Check className="h-3.5 w-3.5 stroke-[3]" />}
+                              </div>
+                              <span className="text-xs font-black text-slate-800 dark:text-slate-100">
+                                {client.name || 'Unnamed Client'}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-bold text-slate-400">{client.phone}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* SELECTABLE CLIENT CARDS WITH EXACT UI MATCH & PAGINATION */}
-              {(recipientSelection === 'selected' || recipientSelection === 'all') && (
+              {/* SELECTABLE CLIENT CARDS WITH PAGINATION */}
+              {(recipientSelection === 'selected') && (
                 <div className="space-y-3 pt-1">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
@@ -776,7 +812,6 @@ export default function WhatsAppComposer() {
                     </div>
                   </div>
 
-                  {/* CARDS CONTAINER */}
                   <div className="p-3 bg-slate-50/50 dark:bg-[#070b13]/50 rounded-[28px] border border-slate-200/80 dark:border-slate-800/80 space-y-2.5">
                     {currentPaginatedClients.map(client => (
                       <div
@@ -810,7 +845,6 @@ export default function WhatsAppComposer() {
                     )}
                   </div>
 
-                  {/* PAGINATION BAR */}
                   <div className="flex items-center justify-between pt-1 px-1">
                     <span className="text-xs font-bold text-slate-600 dark:text-slate-400">
                       <strong className="font-black text-slate-800 dark:text-slate-200">Pg {currentPage}/{totalPages}</strong>{' '}
@@ -842,11 +876,10 @@ export default function WhatsAppComposer() {
                 </div>
               )}
 
-              {/* SEGMENT SELECTOR */}
               {recipientSelection === 'segment' && (
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-500 uppercase tracking-wider block">
-                    Select Client Segment
+                    Select Client Segment Category
                   </label>
                   <select
                     value={selectedSegment}
@@ -861,7 +894,7 @@ export default function WhatsAppComposer() {
               )}
             </div>
 
-            {/* 3. MESSAGE COMPOSER */}
+            {/* 3. MESSAGE COMPOSER WITH PICTURE UPLOAD */}
             <div className="bg-white dark:bg-[#0c1222] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/60 shadow-sm space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -876,14 +909,40 @@ export default function WhatsAppComposer() {
                 </div>
               </div>
 
-              <div className="relative">
+              <div className="relative space-y-3">
                 <textarea
-                  rows={6}
+                  rows={5}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="Type your campaign message here..."
                   className="w-full bg-slate-50 dark:bg-[#070b13] border-2 border-slate-200 dark:border-slate-800 rounded-3xl p-4 text-xs font-semibold leading-relaxed text-slate-900 dark:text-slate-100 outline-none focus:border-orange-500 transition-colors"
                 ></textarea>
+
+                {/* PICTURE UPLOAD OPTION IN COMPOSER */}
+                <div className="p-3 bg-slate-50 dark:bg-[#070b13] rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Image className="h-5 w-5 text-orange-500" />
+                    <span className="text-xs font-black text-slate-700 dark:text-slate-200">Attach Image / Media</span>
+                  </div>
+
+                  <label className="cursor-pointer bg-orange-500 hover:bg-orange-600 text-white font-black text-xs px-3.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-sm">
+                    <UploadCloud className="h-3.5 w-3.5" />
+                    <span>Upload Picture</span>
+                    <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+                  </label>
+                </div>
+
+                {uploadedImage && (
+                  <div className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-orange-500 shadow-md">
+                    <img src={uploadedImage} alt="Uploaded attachment" className="w-full h-full object-cover" />
+                    <button
+                      onClick={() => setUploadedImage(null)}
+                      className="absolute top-1 right-1 bg-rose-600 text-white rounded-full p-1 hover:bg-rose-700"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -909,61 +968,6 @@ export default function WhatsAppComposer() {
                     <span>{"{{first_name}}"}</span>
                   </button>
                 </div>
-              </div>
-
-              <div className="bg-slate-50 dark:bg-[#070b13] p-4 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-3">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
-                  Automated Validation Checks
-                </span>
-
-                <div className="space-y-1.5 text-xs font-extrabold">
-                  <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-                    <Check className="h-4 w-4 stroke-[3]" />
-                    <span>Message structure is valid</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-                    <Check className="h-4 w-4 stroke-[3]" />
-                    <span>{calculatedRecipients.finalCount} valid recipients ready</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-                    <Check className="h-4 w-4 stroke-[3]" />
-                    <span>{calculatedRecipients.optedOutCount} opted-out clients automatically excluded</span>
-                  </div>
-                </div>
-
-                {(calculatedRecipients.missingNameCount > 0 || calculatedRecipients.invalidCount > 0) && (
-                  <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
-                    {calculatedRecipients.missingNameCount > 0 && (
-                      <div className="flex items-center justify-between p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-700 dark:text-amber-300 text-xs font-black">
-                        <div className="flex items-center gap-2">
-                          <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-                          <span>{calculatedRecipients.missingNameCount} clients have missing names.</span>
-                        </div>
-                        <button
-                          onClick={() => setShowMissingNamesModal(true)}
-                          className="text-[10px] underline hover:opacity-80"
-                        >
-                          View Clients
-                        </button>
-                      </div>
-                    )}
-
-                    {calculatedRecipients.invalidCount > 0 && (
-                      <div className="flex items-center justify-between p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-rose-700 dark:text-rose-300 text-xs font-black">
-                        <div className="flex items-center gap-2">
-                          <AlertTriangle className="h-4 w-4 text-rose-500 shrink-0" />
-                          <span>{calculatedRecipients.invalidCount} invalid WhatsApp numbers.</span>
-                        </div>
-                        <button
-                          onClick={() => setShowInvalidModal(true)}
-                          className="text-[10px] underline hover:opacity-80"
-                        >
-                          View Invalid Numbers
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
 
               {/* TEST MESSAGE SECTION */}
@@ -1004,7 +1008,7 @@ export default function WhatsAppComposer() {
 
           {/* RIGHT COLUMN */}
           <div className="lg:col-span-5 space-y-6">
-            
+
             {/* LIVE PREVIEW */}
             <div className="bg-white dark:bg-[#0c1222] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/60 shadow-sm space-y-4">
               <div className="flex justify-between items-center">
@@ -1042,7 +1046,10 @@ export default function WhatsAppComposer() {
                   </span>
                 </div>
 
-                <div className="bg-white dark:bg-[#202c33] text-slate-900 dark:text-slate-100 p-3.5 rounded-2xl rounded-tl-none max-w-[90%] shadow-md space-y-1 ml-1 border border-slate-200/50 dark:border-slate-700/50">
+                <div className="bg-white dark:bg-[#202c33] text-slate-900 dark:text-slate-100 p-3.5 rounded-2xl rounded-tl-none max-w-[90%] shadow-md space-y-2 ml-1 border border-slate-200/50 dark:border-slate-700/50">
+                  {uploadedImage && (
+                    <img src={uploadedImage} alt="Attachment" className="w-full rounded-xl object-cover max-h-40" />
+                  )}
                   <p className="text-xs font-semibold whitespace-pre-wrap leading-relaxed">
                     {previewText}
                   </p>
@@ -1130,11 +1137,11 @@ export default function WhatsAppComposer() {
 
       </main>
 
-      {/* CLIENT SEGMENT SELECTION MODAL WITH 3 ANIMATED GLOWING TOP CARDS, EXACT MATCHED UI & 10 CARDS PAGINATION */}
+      {/* CLIENT SEGMENT SELECTION MODAL */}
       {showSegmentModal && (
         <div className="fixed inset-0 z-[180] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
           <div className="bg-white dark:bg-[#0d1527] border-2 border-orange-500 rounded-[32px] p-5 sm:p-6 max-w-xl w-full shadow-[0_0_40px_rgba(249,115,22,0.35)] space-y-5 my-auto max-h-[92vh] flex flex-col relative overflow-hidden">
-            
+
             {/* MODAL HEADER */}
             <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800/80 shrink-0">
               <div className="flex items-center gap-3">
@@ -1159,10 +1166,9 @@ export default function WhatsAppComposer() {
               </button>
             </div>
 
-            {/* 3 BEAUTIFUL, ANIMATED, GLOWING CATEGORY CARDS AT TOP */}
+            {/* 3 CATEGORY SELECTION CARDS */}
             <div className="grid grid-cols-3 gap-2 sm:gap-3 shrink-0">
-              
-              {/* VIP CLIENTS CARD */}
+
               <button
                 type="button"
                 onClick={() => {
@@ -1182,7 +1188,6 @@ export default function WhatsAppComposer() {
                 </span>
               </button>
 
-              {/* REGULARS CARD */}
               <button
                 type="button"
                 onClick={() => {
@@ -1202,7 +1207,6 @@ export default function WhatsAppComposer() {
                 </span>
               </button>
 
-              {/* NEW LEADS CARD */}
               <button
                 type="button"
                 onClick={() => {
@@ -1236,7 +1240,7 @@ export default function WhatsAppComposer() {
               />
             </div>
 
-            {/* PRODUCT CARD STYLED CLIENT LIST CONTAINER (10 PER PAGE) */}
+            {/* CLIENT LIST CONTAINER */}
             <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 min-h-[220px]">
               {modalPaginatedClients.map(client => {
                 const isSelected = tempSelectedClients.includes(client.id);
@@ -1252,7 +1256,6 @@ export default function WhatsAppComposer() {
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      {/* SELECTION CIRCLE MATCHING REFERENCE SAMPLE */}
                       <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center transition-colors ${
                         isSelected ? 'border-orange-500 bg-orange-500 text-white' : 'border-slate-300 dark:border-slate-700'
                       }`}>
@@ -1270,7 +1273,7 @@ export default function WhatsAppComposer() {
                     </div>
 
                     <div className="px-3 py-1 rounded-full bg-orange-500 text-white font-black text-xs shadow-sm shrink-0">
-                      {activeCategory}
+                      + Add Favorite
                     </div>
                   </div>
                 );
@@ -1278,18 +1281,16 @@ export default function WhatsAppComposer() {
 
               {modalPaginatedClients.length === 0 && (
                 <div className="py-12 text-center text-xs font-extrabold text-slate-400">
-                  Is Category ({activeCategory}) me aur koi clients save nahi hone bache.
+                  Is Category ({activeCategory}) me aur koi clients save hone bache nahi hain.
                 </div>
               )}
             </div>
 
-            {/* MODAL FOOTER WITH OK BUTTON & PAGINATION */}
+            {/* MODAL FOOTER */}
             <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 space-y-3 shrink-0">
-              
-              {/* MODAL PAGINATION CONTROLS */}
               <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-1">
                 <span>Page {modalCurrentPage} of {modalTotalPages} ({modalAvailableClients.length} Total)</span>
-                
+
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -1310,16 +1311,14 @@ export default function WhatsAppComposer() {
                 </div>
               </div>
 
-              {/* STYLED OK / SAVE BUTTON MATCHING REFERENCE IMAGE SAMPLE */}
               <button
                 type="button"
                 onClick={handleSaveModalSelection}
                 className="w-full py-3.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-black text-sm uppercase tracking-wider rounded-full shadow-[0_4px_20px_rgba(249,115,22,0.4)] transition-all flex items-center justify-center gap-2"
               >
                 <Check className="h-5 w-5 stroke-[3]" />
-                <span>OK</span>
+                <span>Save Category Clients</span>
               </button>
-
             </div>
 
           </div>
@@ -1351,9 +1350,6 @@ export default function WhatsAppComposer() {
                   <span>Target Valid Recipients:</span>
                   <span className="text-emerald-500 font-black text-sm">{calculatedRecipients.finalCount}</span>
                 </div>
-                <p className="text-[10px] text-slate-400">
-                  {calculatedRecipients.optedOutCount} opted-out • {calculatedRecipients.invalidCount} invalid excluded
-                </p>
               </div>
 
               <div className="bg-slate-50 dark:bg-[#070b13] p-3 rounded-2xl space-y-1 border border-slate-200 dark:border-slate-800">
@@ -1413,46 +1409,6 @@ export default function WhatsAppComposer() {
               >
                 Confirm & Start
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MISSING NAMES MODAL */}
-      {showMissingNamesModal && (
-        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="bg-white dark:bg-[#0c1222] border-2 border-amber-500 rounded-3xl p-5 max-w-sm w-full space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-2">
-              <h3 className="text-sm font-black text-amber-500">Missing Names Clients</h3>
-              <button onClick={() => setShowMissingNamesModal(false)}><X className="h-4 w-4" /></button>
-            </div>
-            <div className="max-h-48 overflow-y-auto space-y-2 text-xs font-bold">
-              {calculatedRecipients.missingNameClientsList.map(c => (
-                <div key={c.id} className="p-2 bg-slate-50 dark:bg-[#070b13] rounded-xl flex justify-between">
-                  <span>Unnamed Client</span>
-                  <span className="text-slate-400">{c.phone}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* INVALID NUMBERS MODAL */}
-      {showInvalidModal && (
-        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="bg-white dark:bg-[#0c1222] border-2 border-rose-500 rounded-3xl p-5 max-w-sm w-full space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-2">
-              <h3 className="text-sm font-black text-rose-500">Invalid WhatsApp Numbers</h3>
-              <button onClick={() => setShowInvalidModal(false)}><X className="h-4 w-4" /></button>
-            </div>
-            <div className="max-h-48 overflow-y-auto space-y-2 text-xs font-bold">
-              {calculatedRecipients.invalidClientsList.map(c => (
-                <div key={c.id} className="p-2 bg-slate-50 dark:bg-[#070b13] rounded-xl flex justify-between">
-                  <span>{c.name || 'Client'}</span>
-                  <span className="text-rose-500">{c.phone}</span>
-                </div>
-              ))}
             </div>
           </div>
         </div>

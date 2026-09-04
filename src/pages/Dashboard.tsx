@@ -63,6 +63,7 @@ export default function Dashboard() {
   const location = useLocation();
 
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [, setUserName] = useState<string>('Admin');
   const [isDark, setIsDark] = useState<boolean>(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -116,11 +117,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user && user.email) {
+      if (user) {
+        setCurrentUserId(user.uid);
         setCurrentUserEmail(user.email);
-        setUserName(user.displayName || user.email.split('@')[0] || 'Admin');
+        setUserName(user.displayName || (user.email ? user.email.split('@')[0] : 'Admin'));
       } else {
         const savedEmail = localStorage.getItem('userEmail') || 'admin@domain.com';
+        const savedUid = localStorage.getItem('userId') || savedEmail;
+        setCurrentUserId(savedUid);
         setCurrentUserEmail(savedEmail);
       }
     });
@@ -128,10 +132,11 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (!currentUserEmail) return;
+    const activeDocId = currentUserId || currentUserEmail;
+    if (!activeDocId) return;
     setLoading(true);
 
-    const campaignRef = collection(db, "users", currentUserEmail, "campaigns");
+    const campaignRef = collection(db, "users", activeDocId, "campaigns");
     const unsubscribeCampaigns = onSnapshot(campaignRef, (snapshot) => {
       const data: any[] = [];
       snapshot.forEach((doc) => data.push({ id: doc.id, ...doc.data() }));
@@ -139,24 +144,26 @@ export default function Dashboard() {
       setLoading(false);
     }, () => triggerToast("Failed to sync campaigns", "error"));
 
-    const clientRef = collection(db, "users", currentUserEmail, "clients");
+    const clientRef = collection(db, "users", activeDocId, "clients");
     const unsubscribeClients = onSnapshot(clientRef, (snapshot) => {
       const data: any[] = [];
       snapshot.forEach((doc) => data.push({ id: doc.id, ...doc.data() }));
       setClients(data);
     }, () => triggerToast("Failed to sync clients", "error"));
 
-    const notifRef = collection(db, "users", currentUserEmail, "notifications");
+    const notifRef = collection(db, "users", activeDocId, "notifications");
     const unsubscribeNotifs = onSnapshot(notifRef, (snapshot) => {
       setNotificationCount(snapshot.size);
     });
 
-    const activityRef = collection(db, "users", currentUserEmail, "activity_logs");
+    const activityRef = collection(db, "users", activeDocId, "activity_logs");
     const activityQuery = query(activityRef, orderBy("timestamp", "desc"), limit(5));
     const unsubscribeActivity = onSnapshot(activityQuery, (snapshot) => {
       const logs: any[] = [];
       snapshot.forEach((doc) => logs.push({ id: doc.id, ...doc.data() }));
       setRecentActivities(logs);
+    }, () => {
+      // Graceful fallback for non-indexed/missing activity logs
     });
 
     return () => {
@@ -165,7 +172,7 @@ export default function Dashboard() {
       unsubscribeNotifs();
       unsubscribeActivity();
     };
-  }, [currentUserEmail]);
+  }, [currentUserId, currentUserEmail]);
 
   const confirmLogout = async () => {
     try {
@@ -373,11 +380,14 @@ export default function Dashboard() {
             <Download className="h-4 w-4" />
           </button>
 
+          {/* CHAUDHARY TRADERS STYLE TOGGLE BUTTON */}
           <button 
             onClick={() => setIsDark(!isDark)}
-            className="flex items-center justify-center p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+            className="w-16 h-8 rounded-full bg-sky-200 dark:bg-sky-900/60 p-1 flex items-center transition-colors duration-300 border border-sky-300 dark:border-sky-700 shadow-inner"
           >
-            {isDark ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4 text-slate-600" />}
+            <div className={`w-6 h-6 rounded-full bg-amber-400 dark:bg-sky-400 flex items-center justify-center shadow-md transform transition-transform duration-300 ${isDark ? 'translate-x-8' : 'translate-x-0'}`}>
+              {isDark ? <Moon className="h-3.5 w-3.5 text-slate-900" /> : <Sun className="h-3.5 w-3.5 text-white" />}
+            </div>
           </button>
 
           <Link to="/alerts" className="relative p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">

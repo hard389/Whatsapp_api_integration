@@ -713,7 +713,7 @@ export default function ImportClients() {
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-orange-500"></span>
                 </span>
-                <span className="text-xs font-black uppercase tracking-wider">Client Pipeline Engine</span>
+                <span className="text-xs font-black uppercase tracking-wider">Whatsapp Engine</span>
               </div>
 
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 font-extrabold text-xs">
