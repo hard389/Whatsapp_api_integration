@@ -15,7 +15,6 @@ import {
   CheckCircle2,
   ArrowLeft,
   ShoppingCart,
-  PieChart,
   FileSpreadsheet,
   AlertCircle,
   Users,
@@ -148,9 +147,10 @@ export default function ImportClients() {
     message: ''
   });
 
+  // User Dynamic Identifier - User ke Email / UID sa Document Path Generate Karne Ke Liye
   const getUserDocId = (user: User | null): string => {
     if (!user) return 'guest';
-    return user.uid;
+    return user.email || user.uid;
   };
 
   useEffect(() => {
@@ -165,6 +165,7 @@ export default function ImportClients() {
     if (!currentUser) return;
     const userDocId = getUserDocId(currentUser);
 
+    // Dynamic Tree Path: users -> {userEmail/uid} -> clients
     const clientsRef = collection(db, 'users', userDocId, 'clients');
     const unsubClients = onSnapshot(
       clientsRef,
@@ -181,6 +182,7 @@ export default function ImportClients() {
       }
     );
 
+    // Dynamic Tree Path: users -> {userEmail/uid} -> import_history
     const historyRef = collection(db, 'users', userDocId, 'import_history');
     const historyQuery = query(historyRef, orderBy('timestamp', 'desc'), limit(10));
     const unsubHistory = onSnapshot(
@@ -509,6 +511,7 @@ export default function ImportClients() {
         chunk.forEach((rec) => {
           const docId = rec.normalizedPhone.replace('+', '').trim();
           if (docId) {
+            // Dynamic Path: users / {userEmail/uid} / clients / {docId}
             const clientRef = doc(db, 'users', userDocId, 'clients', docId);
 
             batch.set(
@@ -532,6 +535,7 @@ export default function ImportClients() {
         setUploadProgress(Math.round(((i + 1) / totalSteps) * 100));
       }
 
+      // Dynamic Path: users / {userEmail/uid} / import_history / {batchId}
       const historyDocRef = doc(db, 'users', userDocId, 'import_history', batchId);
       await setDoc(historyDocRef, {
         fileName: selectedFileName || 'imported_clients.xlsx',
