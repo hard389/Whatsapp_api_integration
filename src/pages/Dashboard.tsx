@@ -651,7 +651,7 @@ export default function Dashboard() {
             { label: 'Import Excel', icon: FileSpreadsheet, href: '/import' },
             { label: 'Composer', icon: Send, href: '/composer' },
             { label: 'Clients', icon: Users, href: '/clients' },
-            { label: 'Settings', icon: Settings, href: '/api-settings' },
+            { label: 'Settings', icon: Settings, href: '/quiz' },
           ].map((tab) => {
             const IconComponent = tab.icon;
             const isActive = location.pathname === tab.href || (tab.href === '/dashboard' && location.pathname === '/');

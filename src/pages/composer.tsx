@@ -439,10 +439,10 @@ export default function WhatsAppComposer() {
 
   const navigationTabs = [
     { id: 'home', label: 'Home', icon: Home, href: '/' },
-    { id: 'import', label: 'Import Excel', icon: FileSpreadsheet, href: '/import-excel' },
-    { id: 'composer', label: 'Composer', icon: Send, href: '/whatsapp-composer' },
+    { id: 'import', label: 'Import Excel', icon: FileSpreadsheet, href: '/import' },
+    { id: 'composer', label: 'Composer', icon: Send, href: '/composer' },
     { id: 'clients', label: 'Clients', icon: Users, href: '/clients' },
-    { id: 'settings', label: 'Settings', icon: Settings, href: '/settings' },
+    { id: 'settings', label: 'Settings', icon: Settings, href: '/quiz' },
   ];
 
   return (
@@ -677,7 +677,7 @@ export default function WhatsAppComposer() {
                       : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  Client Segment
+                  Favourite Client
                 </button>
               </div>
 
@@ -798,7 +798,7 @@ export default function WhatsAppComposer() {
                 <div className="space-y-3 pt-1">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                      AVAILABLE CLIENTS FROM LIVE DATABASE
+                      AVAILABLE CLIENTS 
                     </span>
                     <div className="relative w-full sm:w-48">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
@@ -840,7 +840,7 @@ export default function WhatsAppComposer() {
 
                     {filteredAvailableClients.length === 0 && (
                       <div className="py-6 text-center text-xs font-bold text-slate-400">
-                        {loadingClients ? 'Loading Live Clients...' : 'Koi clients available nahi hain.'}
+                        {loadingClients ? 'Loading Live Clients...' : 'No clients available Here Please Upload Or Create Manualy'}
                       </div>
                     )}
                   </div>
@@ -879,7 +879,7 @@ export default function WhatsAppComposer() {
               {recipientSelection === 'segment' && (
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-500 uppercase tracking-wider block">
-                    Select Client Segment Category
+                    Select Favourite Client Category
                   </label>
                   <select
                     value={selectedSegment}

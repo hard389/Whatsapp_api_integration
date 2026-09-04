@@ -637,9 +637,9 @@ export default function ImportClients() {
   const navigationTabs = [
     { id: 'home', label: 'Home', icon: Home, href: '/' },
     { id: 'import_clients', label: 'Import Clients', icon: FileSpreadsheet, href: '/import-clients' },
-    { id: 'sell', label: 'Sell Product', icon: ShoppingCart, href: '/sell' },
-    { id: 'analytics', label: 'Analytics', icon: PieChart, href: '/analytics' },
-    { id: 'notification', label: 'Notification', icon: Bell, href: '/alerts' }
+    { id: 'sell', label: 'Composer', icon: ShoppingCart, href: '/composer' },
+    { id: 'analytics', label: 'Clients', icon: Users, href: '/clients' },
+    { id: 'notification', label: 'Settings', icon: Bell, href: '/quiz' }
   ];
 
   if (authLoading) {

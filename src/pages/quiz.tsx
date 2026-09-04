@@ -191,8 +191,8 @@ export default function ProfileSettingsPage() {
 
   const navigationTabs = [
     { id: 'home', label: 'Home', icon: Home, href: '/' },
-    { id: 'import', label: 'Import Excel', icon: FileSpreadsheet, href: '/import-excel' },
-    { id: 'composer', label: 'Composer', icon: Send, href: '/whatsapp-composer' },
+    { id: 'import', label: 'Import Excel', icon: FileSpreadsheet, href: '/import' },
+    { id: 'composer', label: 'Composer', icon: Send, href: '/composer' },
     { id: 'clients', label: 'Clients', icon: Users, href: '/clients' },
     { id: 'settings', label: 'Settings', icon: Settings, href: '/settings' },
   ];
