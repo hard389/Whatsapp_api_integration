@@ -6,9 +6,10 @@ import {
   collection, 
   onSnapshot,
   doc, 
+  getDoc,
   updateDoc,
   setDoc,
-  deleteDoc
+  addDoc
 } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import {
@@ -28,7 +29,6 @@ import {
   AlertTriangle,
   X,
   ArrowLeft,
-  Trash2,
   Package,
   Edit,
   Clock,
@@ -69,15 +69,25 @@ interface Client {
   isFavorite?: boolean;
 }
 
+interface MetaConfig {
+  metaAccessToken: string;
+  metaPhoneId: string;
+  metaWabaId?: string;
+  whatsappNumber?: string;
+}
+
 export default function WhatsAppComposer() {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string>('alitahir243715@gmail.com');
   const [isDark, setIsDark] = useState(false);
-  const [activeTab, setActiveTab] = useState('composer');
+  const [, setActiveTab] = useState('composer');
 
   // Dynamic Database Clients State
   const [clients, setClients] = useState<Client[]>([]);
   const [loadingClients, setLoadingClients] = useState(true);
+
+  // Firestore Meta API Credentials Configuration State
+  const [metaConfig, setMetaConfig] = useState<MetaConfig | null>(null);
 
   // Modal & Category Segment States
   const [showSegmentModal, setShowSegmentModal] = useState(false);
@@ -109,11 +119,17 @@ export default function WhatsAppComposer() {
   // Message Composer State
   const [message, setMessage] = useState('Assalam o Alaikum {{name}},\n\nWe hope you are doing well.\n\nThank you for being our valued client.');
 
+  // Template Engine States
+  const [messageType, setMessageType] = useState<'text' | 'template'>('text');
+  const [templateName, setTemplateName] = useState('client_greeting');
+  const [templateLanguage, setTemplateLanguage] = useState('en_US');
+
   // Preview & Test States
   const [previewClientId, setPreviewClientId] = useState<string>('');
-  const [testPhoneNumber, setTestPhoneNumber] = useState('+92 300 1234567');
+  const [testPhoneNumber, setTestPhoneNumber] = useState('+923001234567');
   const [testSending, setTestSending] = useState(false);
   const [testSentSuccess, setTestSentSuccess] = useState(false);
+  const [lastWamid, setLastWamid] = useState<string | null>(null);
 
   // Schedule & Confirmation States
   const [sendType, setSendType] = useState<'now' | 'schedule'>('now');
@@ -130,8 +146,7 @@ export default function WhatsAppComposer() {
   const [sendingProgress, setSendingProgress] = useState({
     total: 0,
     sent: 0,
-    delivered: 0,
-    read: 0,
+    accepted: 0,
     failed: 0,
     percentage: 0
   });
@@ -141,6 +156,15 @@ export default function WhatsAppComposer() {
   const [successToastMsg, setSuccessToastMsg] = useState('');
   const [showErrorToast, setShowErrorToast] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Helper Function: Phone Normalization (E.164)
+  const normalizePhoneNumber = (rawPhone: string): string => {
+    let digits = rawPhone.replace(/[^0-9]/g, '');
+    if (digits.startsWith('0') && digits.length === 11) {
+      digits = '92' + digits.substring(1);
+    }
+    return digits;
+  };
 
   // 1. Firebase Auth Observer
   useEffect(() => {
@@ -152,6 +176,26 @@ export default function WhatsAppComposer() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Fetch Dynamic Meta API Config from Firestore Settings Document
+  useEffect(() => {
+    const fetchConfig = async () => {
+      const emailKey = currentUserEmail || 'alitahir243715@gmail.com';
+      try {
+        const configDocRef = doc(db, 'users', emailKey, 'settings', 'config');
+        const configSnap = await getDoc(configDocRef);
+        if (configSnap.exists()) {
+          setMetaConfig(configSnap.data() as MetaConfig);
+        } else {
+          console.warn("Config document not found in Firestore!");
+        }
+      } catch (err) {
+        console.error("Firestore Config Fetch Error:", err);
+      }
+    };
+
+    fetchConfig();
+  }, [currentUserEmail]);
 
   // 2. Realtime Database Synchronization
   useEffect(() => {
@@ -201,10 +245,14 @@ export default function WhatsAppComposer() {
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        triggerError("File size exceeds 5MB limit. Please upload a smaller image.");
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
         setUploadedImage(reader.result as string);
-        triggerSuccess("Image uploaded to composer!");
+        triggerSuccess("Image loaded to composer!");
       };
       reader.readAsDataURL(file);
     }
@@ -235,7 +283,6 @@ export default function WhatsAppComposer() {
     );
   };
 
-  // Save Selected Modal Clients & Create Category Record
   const handleSaveModalSelection = async () => {
     if (tempSelectedClients.length === 0) {
       triggerError("Please select at least one client first!");
@@ -275,23 +322,6 @@ export default function WhatsAppComposer() {
     }
   };
 
-  const handleRemoveFavoriteCard = async (client: Client) => {
-    const emailKey = currentUserEmail || 'alitahir243715@gmail.com';
-
-    setSelectedClientIds(prev => prev.filter(id => id !== client.id));
-
-    try {
-      const clientDocRef = doc(db, 'users', emailKey, 'clients', client.id);
-      await updateDoc(clientDocRef, {
-        isFavorite: false,
-        segment: ''
-      });
-      triggerSuccess("Client removed from favorite list.");
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const handleMoveClientCategory = async (clientId: string, newCategory: string) => {
     const emailKey = currentUserEmail || 'alitahir243715@gmail.com';
     try {
@@ -313,7 +343,6 @@ export default function WhatsAppComposer() {
     );
   };
 
-  // Dynamic filter for Category Card calculation based on current selection and category
   const dynamicCategoryCardData = useMemo(() => {
     if (recipientSelection === 'all') {
       const selectedInCategory = clients.filter(c => selectedClientIds.includes(c.id));
@@ -421,16 +450,125 @@ export default function WhatsAppComposer() {
       .replace(/\{\{first_name\}\}/g, firstName);
   }, [message, previewClientId, clients]);
 
-  const handleSendTestMessage = () => {
+  // Helper Function: WhatsApp API Dynamic Direct Dispatch & Inspection
+  const sendWhatsAppApiMessage = async (
+    recipientPhone: string, 
+    messageContent: string, 
+    token: string, 
+    phoneId: string,
+    dynamicVariables: { name: string } = { name: "Valued Client" }
+  ) => {
+    const formattedPhone = normalizePhoneNumber(recipientPhone);
+    const endpoint = `https://graph.facebook.com/v20.0/${phoneId}/messages`;
+
+    let payload: any = {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: formattedPhone,
+    };
+
+    if (messageType === "template") {
+      payload.type = "template";
+      payload.template = {
+        name: templateName,
+        language: { code: templateLanguage },
+        components: [
+          {
+            type: "body",
+            parameters: [
+              { type: "text", text: dynamicVariables.name }
+            ]
+          }
+        ]
+      };
+    } else if (uploadedImage && uploadedImage.startsWith('http')) {
+      payload.type = "image";
+      payload.image = {
+        link: uploadedImage,
+        caption: messageContent
+      };
+    } else {
+      payload.type = "text";
+      payload.text = {
+        preview_url: false,
+        body: messageContent
+      };
+    }
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+    console.log("META CLOUD API RESPONSE:", data);
+
+    if (!response.ok) {
+      throw new Error(data.error?.message || "Failed to dispatch message via WhatsApp API");
+    }
+
+    return data;
+  };
+
+  const handleSendTestMessage = async () => {
     if (!testPhoneNumber) return triggerError("Please enter a test phone number!");
+
+    let token = metaConfig?.metaAccessToken;
+    let phoneId = metaConfig?.metaPhoneId;
+
+    if (!token || !phoneId) {
+      try {
+        const emailKey = currentUserEmail || 'alitahir243715@gmail.com';
+        const configDocRef = doc(db, 'users', emailKey, 'settings', 'config');
+        const configSnap = await getDoc(configDocRef);
+        if (configSnap.exists()) {
+          const cfg = configSnap.data() as MetaConfig;
+          token = cfg.metaAccessToken;
+          phoneId = cfg.metaPhoneId;
+          setMetaConfig(cfg);
+        }
+      } catch (err) {
+        console.error("Config fetch fallback error:", err);
+      }
+    }
+
+    if (!token || !phoneId) {
+      return triggerError("Meta Token or Phone ID not found in Firestore config settings!");
+    }
+
     setTestSending(true);
     setTestSentSuccess(false);
 
-    setTimeout(() => {
+    try {
+      const targetClient = clients.find(c => c.id === previewClientId) || clients[0];
+      const clientName = targetClient?.name || 'Valued Client';
+      const firstName = clientName.split(' ')[0] || clientName;
+      const formattedMessage = message
+        .replace(/\{\{name\}\}/g, clientName)
+        .replace(/\{\{first_name\}\}/g, firstName);
+
+      const responseData = await sendWhatsAppApiMessage(
+        testPhoneNumber, 
+        formattedMessage, 
+        token, 
+        phoneId, 
+        { name: clientName }
+      );
+
+      const wamid = responseData?.messages?.[0]?.id;
+      setLastWamid(wamid || null);
+
       setTestSending(false);
       setTestSentSuccess(true);
-      triggerSuccess("Test message sent successfully!");
-    }, 1200);
+      triggerSuccess(`Test message accepted by Meta API! WAMID: ${wamid || 'N/A'}`);
+    } catch (err: any) {
+      setTestSending(false);
+      triggerError(err.message || "Failed to send test message");
+    }
   };
 
   const handleStartCampaignExecution = async () => {
@@ -441,46 +579,147 @@ export default function WhatsAppComposer() {
       return triggerError("No valid recipients available to send campaign!");
     }
 
+    let token = metaConfig?.metaAccessToken;
+    let phoneId = metaConfig?.metaPhoneId;
+
+    if (!token || !phoneId) {
+      try {
+        const emailKey = currentUserEmail || 'alitahir243715@gmail.com';
+        const configDocRef = doc(db, 'users', emailKey, 'settings', 'config');
+        const configSnap = await getDoc(configDocRef);
+        if (configSnap.exists()) {
+          const cfg = configSnap.data() as MetaConfig;
+          token = cfg.metaAccessToken;
+          phoneId = cfg.metaPhoneId;
+          setMetaConfig(cfg);
+        }
+      } catch (err) {
+        console.error("Config fetch fallback error:", err);
+      }
+    }
+
+    if (!token || !phoneId) {
+      return triggerError("Meta Token or Phone ID missing in Settings Config!");
+    }
+
+    const recipientsList = calculatedRecipients.validRecipients;
+    const emailKey = currentUserEmail || 'alitahir243715@gmail.com';
+
+    let campaignId = "";
+    try {
+      const campaignRef = await addDoc(collection(db, 'users', emailKey, 'campaigns'), {
+        name: campaignName,
+        description: campaignDescription,
+        status: sendType === 'schedule' ? 'scheduled' : 'processing',
+        sendType,
+        scheduleDate: sendType === 'schedule' ? scheduleDate : null,
+        scheduleTime: sendType === 'schedule' ? scheduleTime : null,
+        totalRecipients: recipientsList.length,
+        sentCount: 0,
+        acceptedCount: 0,
+        failedCount: 0,
+        createdAt: new Date().toISOString()
+      });
+      campaignId = campaignRef.id;
+    } catch (e) {
+      console.error("Failed to store campaign record in Firestore:", e);
+    }
+
+    if (sendType === 'schedule') {
+      triggerSuccess(`Campaign successfully scheduled for ${scheduleDate} at ${scheduleTime}`);
+      return;
+    }
+
     const campaignObj = {
+      id: campaignId,
       name: campaignName,
-      total: calculatedRecipients.finalCount,
+      total: recipientsList.length,
       startTime: new Date().toLocaleTimeString()
     };
 
     setActiveCampaign(campaignObj);
     setSendingProgress({
-      total: calculatedRecipients.finalCount,
+      total: recipientsList.length,
       sent: 0,
-      delivered: 0,
-      read: 0,
+      accepted: 0,
       failed: 0,
       percentage: 0
     });
 
-    triggerSuccess("Campaign queued! Dispatching via WhatsApp API...");
+    triggerSuccess("Dispatching campaign live via Meta WhatsApp Cloud API...");
 
     let currentSent = 0;
-    const interval = setInterval(() => {
-      currentSent += Math.floor(Math.random() * 25) + 10;
-      if (currentSent >= calculatedRecipients.finalCount) {
-        currentSent = calculatedRecipients.finalCount;
-        clearInterval(interval);
+    let acceptedCount = 0;
+    let failedCount = 0;
+
+    for (let i = 0; i < recipientsList.length; i++) {
+      const recipient = recipientsList[i];
+      const clientName = recipient.name || 'Valued Client';
+      const firstName = clientName.split(' ')[0] || clientName;
+      const personalizedMsg = message
+        .replace(/\{\{name\}\}/g, clientName)
+        .replace(/\{\{first_name\}\}/g, firstName);
+
+      try {
+        const response = await sendWhatsAppApiMessage(
+          recipient.phone, 
+          personalizedMsg, 
+          token, 
+          phoneId, 
+          { name: clientName }
+        );
+
+        const wamid = response?.messages?.[0]?.id || null;
+        currentSent++;
+        acceptedCount++;
+
+        if (campaignId) {
+          await addDoc(collection(db, 'users', emailKey, 'campaigns', campaignId, 'logs'), {
+            recipientPhone: recipient.phone,
+            recipientName: recipient.name,
+            wamid,
+            status: 'sent',
+            sentAt: new Date().toISOString()
+          });
+        }
+
+      } catch (err: any) {
+        console.error(`Failed sending to ${recipient.phone}:`, err);
+        currentSent++;
+        failedCount++;
+
+        if (campaignId) {
+          await addDoc(collection(db, 'users', emailKey, 'campaigns', campaignId, 'logs'), {
+            recipientPhone: recipient.phone,
+            recipientName: recipient.name,
+            status: 'failed',
+            error: err.message || "Unknown error",
+            failedAt: new Date().toISOString()
+          });
+        }
       }
 
-      const percentage = Math.round((currentSent / calculatedRecipients.finalCount) * 100);
-      const delivered = Math.floor(currentSent * 0.94);
-      const read = Math.floor(currentSent * 0.83);
-      const failed = Math.floor(currentSent * 0.01);
-
+      const percentage = Math.round((currentSent / recipientsList.length) * 100);
       setSendingProgress({
-        total: calculatedRecipients.finalCount,
+        total: recipientsList.length,
         sent: currentSent,
-        delivered,
-        read,
-        failed,
+        accepted: acceptedCount,
+        failed: failedCount,
         percentage
       });
-    }, 400);
+    }
+
+    if (campaignId) {
+      await updateDoc(doc(db, 'users', emailKey, 'campaigns', campaignId), {
+        status: 'completed',
+        sentCount: currentSent,
+        acceptedCount,
+        failedCount,
+        completedAt: new Date().toISOString()
+      });
+    }
+
+    triggerSuccess("Campaign dispatch complete! Delivery tracking will process via Webhook.");
   };
 
   const navigationTabs = [
@@ -590,20 +829,20 @@ export default function WhatsAppComposer() {
           <div className="bg-white dark:bg-[#0c1222] p-6 rounded-3xl border-2 border-orange-500 shadow-[0_0_30px_rgba(249,115,22,0.3)] space-y-4 animate-fadeIn">
             <div className="flex justify-between items-center">
               <div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-orange-500 block">ACTIVE QUEUED CAMPAIGN</span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-orange-500 block">ACTIVE DISPATCHING CAMPAIGN</span>
                 <h3 className="text-lg font-black text-slate-900 dark:text-white">{activeCampaign.name}</h3>
               </div>
               <button
                 onClick={() => setActiveCampaign(null)}
                 className="px-3 py-1.5 bg-rose-500/10 text-rose-500 border border-rose-500/30 rounded-xl font-black text-xs hover:bg-rose-500 hover:text-white transition-all"
               >
-                Cancel Campaign
+                Close Monitor
               </button>
             </div>
 
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs font-black">
-                <span className="text-slate-500">{sendingProgress.sent} / {sendingProgress.total} Sent</span>
+                <span className="text-slate-500">{sendingProgress.sent} / {sendingProgress.total} Processed</span>
                 <span className="text-orange-500">{sendingProgress.percentage}% Complete</span>
               </div>
               <div className="w-full bg-slate-100 dark:bg-[#070b13] h-3.5 rounded-full overflow-hidden p-0.5 border border-slate-200 dark:border-slate-800">
@@ -614,18 +853,14 @@ export default function WhatsAppComposer() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+            <div className="grid grid-cols-3 gap-3 pt-2">
               <div className="bg-slate-50 dark:bg-[#070b13] p-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-center">
                 <span className="text-lg font-black text-slate-900 dark:text-white block">{sendingProgress.sent}</span>
-                <span className="text-[10px] font-black text-slate-400 uppercase">Sent</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase">Processed</span>
               </div>
               <div className="bg-slate-50 dark:bg-[#070b13] p-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-center">
-                <span className="text-lg font-black text-emerald-500 block">{sendingProgress.delivered}</span>
-                <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase">Delivered</span>
-              </div>
-              <div className="bg-slate-50 dark:bg-[#070b13] p-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-center">
-                <span className="text-lg font-black text-sky-500 block">{sendingProgress.read}</span>
-                <span className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase">Read</span>
+                <span className="text-lg font-black text-emerald-500 block">{sendingProgress.accepted}</span>
+                <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase">Meta Accepted</span>
               </div>
               <div className="bg-slate-50 dark:bg-[#070b13] p-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-center">
                 <span className="text-lg font-black text-rose-500 block">{sendingProgress.failed}</span>
@@ -795,7 +1030,7 @@ export default function WhatsAppComposer() {
                             {client.name || 'Unnamed Client'}
                           </span>
                           <span className="text-[10px] font-extrabold text-orange-600 dark:text-orange-400 block truncate">
-                            {client.phone}
+                            {normalizePhoneNumber(client.phone)}
                           </span>
                         </div>
                       </div>
@@ -859,7 +1094,7 @@ export default function WhatsAppComposer() {
                                 {client.name || 'Unnamed Client'}
                               </span>
                             </div>
-                            <span className="text-[10px] font-bold text-slate-400">{client.phone}</span>
+                            <span className="text-[10px] font-bold text-slate-400">{normalizePhoneNumber(client.phone)}</span>
                           </div>
                         );
                       })}
@@ -898,7 +1133,7 @@ export default function WhatsAppComposer() {
                             {client.name || 'Unnamed Client'}
                           </span>
                           <span className="text-[11px] font-bold text-slate-400">
-                            {client.phone}
+                            {normalizePhoneNumber(client.phone)}
                           </span>
                         </div>
 
@@ -968,65 +1203,123 @@ export default function WhatsAppComposer() {
                 </div>
               </div>
 
-              <div className="relative space-y-3">
-                <textarea
-                  rows={5}
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Type your campaign message here..."
-                  className="w-full bg-slate-50 dark:bg-[#070b13] border-2 border-slate-200 dark:border-slate-800 rounded-3xl p-4 text-xs font-semibold leading-relaxed text-slate-900 dark:text-slate-100 outline-none focus:border-orange-500 transition-colors"
-                ></textarea>
+              {/* MESSAGE TYPE TOGGLE */}
+              <div className="grid grid-cols-2 gap-2 bg-slate-50 dark:bg-[#070b13] p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setMessageType('text')}
+                  className={`py-2 rounded-xl text-xs font-black transition-all ${
+                    messageType === 'text'
+                      ? 'bg-orange-500 text-white shadow-md'
+                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Custom Text
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMessageType('template')}
+                  className={`py-2 rounded-xl text-xs font-black transition-all ${
+                    messageType === 'template'
+                      ? 'bg-orange-500 text-white shadow-md'
+                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Approved Template
+                </button>
+              </div>
 
-                <div className="p-3 bg-slate-50 dark:bg-[#070b13] rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Image className="h-5 w-5 text-orange-500" />
-                    <span className="text-xs font-black text-slate-700 dark:text-slate-200">Attach Image / Media</span>
+              {messageType === 'template' ? (
+                <div className="space-y-3 bg-slate-50 dark:bg-[#070b13] p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">
+                      TEMPLATE NAME
+                    </label>
+                    <input
+                      type="text"
+                      value={templateName}
+                      onChange={(e) => setTemplateName(e.target.value)}
+                      placeholder="e.g. client_greeting"
+                      className="w-full bg-white dark:bg-[#0c1222] border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs font-bold"
+                    />
                   </div>
 
-                  <label className="cursor-pointer bg-orange-500 hover:bg-orange-600 text-white font-black text-xs px-3.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-sm">
-                    <UploadCloud className="h-3.5 w-3.5" />
-                    <span>Upload Picture</span>
-                    <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
-                  </label>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">
+                      LANGUAGE CODE
+                    </label>
+                    <input
+                      type="text"
+                      value={templateLanguage}
+                      onChange={(e) => setTemplateLanguage(e.target.value)}
+                      placeholder="e.g. en_US"
+                      className="w-full bg-white dark:bg-[#0c1222] border border-slate-200 dark:border-slate-800 rounded-xl py-2 px-3 text-xs font-bold"
+                    />
+                  </div>
                 </div>
+              ) : (
+                <div className="relative space-y-3">
+                  <textarea
+                    rows={5}
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Type your campaign message here..."
+                    className="w-full bg-slate-50 dark:bg-[#070b13] border-2 border-slate-200 dark:border-slate-800 rounded-3xl p-4 text-xs font-semibold leading-relaxed text-slate-900 dark:text-slate-100 outline-none focus:border-orange-500 transition-colors"
+                  ></textarea>
 
-                {uploadedImage && (
-                  <div className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-orange-500 shadow-md">
-                    <img src={uploadedImage} alt="Attachment" className="w-full h-full object-cover" />
+                  <div className="p-3 bg-slate-50 dark:bg-[#070b13] rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Image className="h-5 w-5 text-orange-500" />
+                      <span className="text-xs font-black text-slate-700 dark:text-slate-200">Attach Public Image URL / Media</span>
+                    </div>
+
+                    <label className="cursor-pointer bg-orange-500 hover:bg-orange-600 text-white font-black text-xs px-3.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-sm">
+                      <UploadCloud className="h-3.5 w-3.5" />
+                      <span>Upload Picture</span>
+                      <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+                    </label>
+                  </div>
+
+                  {uploadedImage && (
+                    <div className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-orange-500 shadow-md">
+                      <img src={uploadedImage} alt="Attachment" className="w-full h-full object-cover" />
+                      <button
+                        onClick={() => setUploadedImage(null)}
+                        className="absolute top-1 right-1 bg-rose-600 text-white rounded-full p-1 hover:bg-rose-700"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {messageType === 'text' && (
+                <div className="space-y-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                    Insert Personalized Variables
+                  </span>
+                  <div className="flex flex-wrap gap-2">
                     <button
-                      onClick={() => setUploadedImage(null)}
-                      className="absolute top-1 right-1 bg-rose-600 text-white rounded-full p-1 hover:bg-rose-700"
+                      type="button"
+                      onClick={() => handleInsertVariable('name')}
+                      className="px-3 py-1.5 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/30 font-black text-xs hover:bg-orange-500 hover:text-white transition-all flex items-center gap-1"
                     >
-                      <X className="h-3 w-3" />
+                      <Sparkles className="h-3 w-3" />
+                      <span>{"{{name}}"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleInsertVariable('first_name')}
+                      className="px-3 py-1.5 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/30 font-black text-xs hover:bg-orange-500 hover:text-white transition-all flex items-center gap-1"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      <span>{"{{first_name}}"}</span>
                     </button>
                   </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
-                  Insert Personalized Variables
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleInsertVariable('name')}
-                    className="px-3 py-1.5 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/30 font-black text-xs hover:bg-orange-500 hover:text-white transition-all flex items-center gap-1"
-                  >
-                    <Sparkles className="h-3 w-3" />
-                    <span>{"{{name}}"}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleInsertVariable('first_name')}
-                    className="px-3 py-1.5 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/30 font-black text-xs hover:bg-orange-500 hover:text-white transition-all flex items-center gap-1"
-                  >
-                    <Sparkles className="h-3 w-3" />
-                    <span>{"{{first_name}}"}</span>
-                  </button>
                 </div>
-              </div>
+              )}
 
               {/* TEST MESSAGE SECTION */}
               <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-3xl space-y-3">
@@ -1053,9 +1346,16 @@ export default function WhatsAppComposer() {
                 </div>
 
                 {testSentSuccess && (
-                  <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 text-xs font-black">
-                    <CheckCheck className="h-4 w-4" />
-                    <span>Test message sent successfully</span>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 text-xs font-black">
+                      <CheckCheck className="h-4 w-4" />
+                      <span>Message Request Accepted by Meta</span>
+                    </div>
+                    {lastWamid && (
+                      <p className="text-[10px] font-mono text-slate-400 break-all">
+                        WAMID: {lastWamid}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -1087,7 +1387,7 @@ export default function WhatsAppComposer() {
                 >
                   {clients.map(client => (
                     <option key={client.id} value={client.id}>
-                      {client.name || 'Unnamed Client'} ({client.phone})
+                      {client.name || 'Unnamed Client'} ({normalizePhoneNumber(client.phone)})
                     </option>
                   ))}
                 </select>
@@ -1109,7 +1409,10 @@ export default function WhatsAppComposer() {
                     <img src={uploadedImage} alt="Attachment" className="w-full rounded-xl object-cover max-h-40" />
                   )}
                   <p className="text-xs font-semibold whitespace-pre-wrap leading-relaxed">
-                    {previewText}
+                    {messageType === 'template' 
+                      ? `[Template: ${templateName}] Hello ${clients.find(c => c.id === previewClientId)?.name || 'Valued Client'}`
+                      : previewText
+                    }
                   </p>
                   <span className="text-[9px] font-bold text-slate-400 float-right mt-1">
                     12:14 PM ✓✓
@@ -1211,7 +1514,7 @@ export default function WhatsAppComposer() {
 
             <div className="p-3 bg-slate-50 dark:bg-[#070b13] rounded-2xl border border-slate-200 dark:border-slate-800 space-y-1">
               <span className="text-xs font-black text-slate-900 dark:text-white block">{editingClient.name}</span>
-              <span className="text-[11px] font-extrabold text-orange-500 block">{editingClient.phone}</span>
+              <span className="text-[11px] font-extrabold text-orange-500 block">{normalizePhoneNumber(editingClient.phone)}</span>
             </div>
 
             <div className="space-y-2">
@@ -1237,7 +1540,7 @@ export default function WhatsAppComposer() {
         </div>
       )}
 
-      {/* CLIENT SEGMENT SELECTION MODAL (MATCHES EXACT ATTACHED DESIGN) */}
+      {/* CLIENT SEGMENT SELECTION MODAL */}
       {showSegmentModal && (
         <div className="fixed inset-0 z-[180] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
           <div className="bg-white dark:bg-[#0d1527] border-2 border-orange-500 rounded-[32px] p-5 sm:p-6 max-w-xl w-full shadow-[0_0_40px_rgba(249,115,22,0.35)] space-y-5 my-auto max-h-[92vh] flex flex-col relative overflow-hidden">
@@ -1367,7 +1670,7 @@ export default function WhatsAppComposer() {
                           {client.name || 'Unnamed Client'}
                         </span>
                         <span className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase block">
-                          PHONE: {client.phone}
+                          PHONE: {normalizePhoneNumber(client.phone)}
                         </span>
                       </div>
                     </div>
@@ -1441,6 +1744,13 @@ export default function WhatsAppComposer() {
               </div>
 
               <div className="bg-slate-50 dark:bg-[#070b13] p-3 rounded-2xl space-y-1 border border-slate-200 dark:border-slate-800">
+                <span className="text-slate-400 text-[10px] uppercase">Execution Type</span>
+                <p className="text-xs font-black text-slate-800 dark:text-white uppercase">
+                  {sendType === 'schedule' ? `Scheduled for ${scheduleDate} at ${scheduleTime}` : 'Immediate Dispatch'}
+                </p>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-[#070b13] p-3 rounded-2xl space-y-1 border border-slate-200 dark:border-slate-800">
                 <span className="text-slate-400 text-[10px] uppercase">Recipients Summary</span>
                 <div className="flex justify-between text-slate-800 dark:text-slate-100">
                   <span>Target Valid Recipients:</span>
@@ -1449,9 +1759,9 @@ export default function WhatsAppComposer() {
               </div>
 
               <div className="bg-slate-50 dark:bg-[#070b13] p-3 rounded-2xl space-y-1 border border-slate-200 dark:border-slate-800">
-                <span className="text-slate-400 text-[10px] uppercase">Message Template</span>
+                <span className="text-slate-400 text-[10px] uppercase">Message Content / Format</span>
                 <p className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap italic">
-                  "{message}"
+                  {messageType === 'template' ? `[Template Payload: ${templateName}]` : `"${message}"`}
                 </p>
               </div>
             </div>
@@ -1488,7 +1798,7 @@ export default function WhatsAppComposer() {
             <div className="space-y-1">
               <h3 className="text-lg font-black text-slate-900 dark:text-white">Are you sure?</h3>
               <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                You are about to send this campaign to <strong className="text-orange-500">{calculatedRecipients.finalCount} individual recipients</strong>.
+                You are about to process this campaign for <strong className="text-orange-500">{calculatedRecipients.finalCount} recipients</strong>.
               </p>
             </div>
 
@@ -1512,39 +1822,39 @@ export default function WhatsAppComposer() {
 
       {/* FIXED BOTTOM NAVIGATION BAR */}
       <div className="fixed bottom-4 left-0 right-0 z-50 flex justify-center px-4">
-  <nav className="w-full max-w-sm bg-white/95 dark:bg-[#0c1222]/95 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 rounded-full shadow-2xl px-3 py-2 flex items-center justify-between">
-    {navigationTabs.map((tab) => {
-      const IconComponent = tab.icon;
-      const isActive = window.location.pathname === tab.href || 
-        (tab.href === '/' && window.location.pathname === '/');
+        <nav className="w-full max-w-sm bg-white/95 dark:bg-[#0c1222]/95 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 rounded-full shadow-2xl px-3 py-2 flex items-center justify-between">
+          {navigationTabs.map((tab) => {
+            const IconComponent = tab.icon;
+            const isActive = window.location.pathname === tab.href || 
+              (tab.href === '/' && window.location.pathname === '/');
 
-      return (
-        <Link
-          key={tab.id}
-          to={tab.href}
-          onClick={() => setActiveTab(tab.id)}
-          className="flex flex-col items-center justify-center flex-1 cursor-pointer bg-transparent border-none p-0"
-        >
-          {isActive ? (
-            <div className="h-10 w-10 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-lg shadow-orange-500/30 mb-0.5">
-              <IconComponent className="h-5 w-5 stroke-[2.2]" />
-            </div>
-          ) : (
-            <div className="h-8 w-8 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
-              <IconComponent className="h-4 w-4 stroke-[1.8]" />
-            </div>
-          )}
+            return (
+              <Link
+                key={tab.id}
+                to={tab.href}
+                onClick={() => setActiveTab(tab.id)}
+                className="flex flex-col items-center justify-center flex-1 cursor-pointer bg-transparent border-none p-0"
+              >
+                {isActive ? (
+                  <div className="h-10 w-10 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-lg shadow-orange-500/30 mb-0.5">
+                    <IconComponent className="h-5 w-5 stroke-[2.2]" />
+                  </div>
+                ) : (
+                  <div className="h-8 w-8 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+                    <IconComponent className="h-4 w-4 stroke-[1.8]" />
+                  </div>
+                )}
 
-          <span className={`text-[9px] font-bold ${
-            isActive ? 'text-orange-500' : 'text-slate-400'
-          }`}>
-            {tab.label}
-          </span>
-        </Link>
-      );
-    })}
-  </nav>
-</div>
+                <span className={`text-[9px] font-bold ${
+                  isActive ? 'text-orange-500' : 'text-slate-400'
+                }`}>
+                  {tab.label}
+                </span>
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
 
     </div>
   );

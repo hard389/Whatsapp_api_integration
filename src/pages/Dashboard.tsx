@@ -544,10 +544,10 @@ export default function Dashboard() {
               </div>
               <div className="text-left leading-tight">
                 <h4 className="text-sm font-black text-purple-900 dark:text-purple-200">
-                  Quiz Section 
+                  Profile Settings
                 </h4>
                 <p className="text-[11px] font-bold text-purple-600/90 dark:text-purple-400">
-                  Start your Quiz assessment
+                  Manage Your Profile Here
                 </p>
               </div>
             </div>
