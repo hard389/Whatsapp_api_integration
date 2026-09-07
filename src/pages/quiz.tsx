@@ -534,31 +534,34 @@ export default function ProfileSettingsPage() {
       <div className="fixed bottom-4 left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
   <nav className="pointer-events-auto w-full max-w-sm bg-white/95 dark:bg-[#0c1222]/95 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 rounded-full shadow-2xl px-3 py-2 flex items-center justify-between">
           {navigationTabs.map((tab) => {
-            const IconComponent = tab.icon;
-            const isActive = activeTab === tab.id;
+  const IconComponent = tab.icon;
+  const isActive = activeTab === tab.id;
 
-            return (
-              <Link
-                key={tab.id}
-                to={tab.href}
-                onClick={() => setActiveTab(tab.id)}
-                className="flex flex-col items-center justify-center flex-1 transition-all group"
-              >
-                <div className={`p-2.5 rounded-full transition-all duration-300 flex items-center justify-center ${
-                  isActive 
-                    ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30' 
-                    : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'
-                }`}>
-                  <IconComponent className="h-5 w-5 stroke-[2.2]" />
-                </div>
-                <span className={`text-[10px] font-extrabold mt-1 transition-all text-center ${
-                  isActive ? 'text-orange-500 font-black' : 'text-slate-400'
-                }`}>
-                  {tab.label}
-                </span>
-              </Link>
-            );
-          })}
+  return (
+    <Link
+      key={tab.id}
+      to={tab.href}
+      onClick={() => setActiveTab(tab.id)}
+      className="flex flex-col items-center justify-center flex-1 cursor-pointer bg-transparent border-none p-0"
+    >
+      {isActive ? (
+        <div className="h-10 w-10 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-lg shadow-orange-500/30 mb-0.5">
+          <IconComponent className="h-5 w-5 stroke-[2.2]" />
+        </div>
+      ) : (
+        <div className="h-8 w-8 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+          <IconComponent className="h-4 w-4 stroke-[1.8]" />
+        </div>
+      )}
+
+      <span className={`text-[9px] font-bold ${
+        isActive ? 'text-orange-500' : 'text-slate-400'
+      }`}>
+        {tab.label}
+      </span>
+    </Link>
+  );
+})}
         </nav>
       </div>
 

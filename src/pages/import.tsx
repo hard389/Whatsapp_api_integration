@@ -14,7 +14,7 @@ import {
   Loader2,
   CheckCircle2,
   ArrowLeft,
-  ShoppingCart,
+  Send,
   FileSpreadsheet,
   AlertCircle,
   Users,
@@ -641,7 +641,7 @@ export default function ImportClients() {
   const navigationTabs = [
     { id: 'home', label: 'Home', icon: Home, href: '/' },
     { id: 'import_clients', label: 'Import Excel', icon: FileSpreadsheet, href: '/import-clients' },
-    { id: 'sell', label: 'Composer', icon: ShoppingCart, href: '/composer' },
+    { id: 'sell', label: 'Composer', icon: Send, href: '/composer' },
     { id: 'analytics', label: 'Clients', icon: Users, href: '/clients' },
     { id: 'notification', label: 'Settings', icon: Bell, href: '/quiz' }
   ];

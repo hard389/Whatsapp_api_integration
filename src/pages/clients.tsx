@@ -714,79 +714,47 @@ export default function ClientsManagement() {
       </main>
 
       {/* BOTTOM NAV BAR */}
-      <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-full max-w-sm backdrop-blur-md rounded-full border shadow-2xl px-3 py-2 flex items-center justify-between transition-colors duration-300 ${
-        isCardDark ? 'bg-[#0c1222] border-slate-800 text-white' : 'bg-white/90 border-slate-200/80 text-slate-700'
-      }`}>
-        <button 
-          onClick={() => navigate('/')}
-          className={`flex flex-col items-center gap-1 group cursor-pointer ${
-            location.pathname === '/' ? 'text-orange-500' : 'text-slate-400'
-          }`}
-        >
-          <div className={`h-10 w-10 rounded-full flex items-center justify-center transition-all ${
-            location.pathname === '/' ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30' : ''
-          }`}>
-            <Home className="h-5 w-5" />
-          </div>
-          <span className="text-[10px] font-black">Home</span>
-        </button>
+<div className="fixed bottom-4 left-0 right-0 z-50 flex justify-center px-4">
+  <nav className="w-full max-w-sm bg-white/95 dark:bg-[#0c1222]/95 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 rounded-full shadow-2xl px-3 py-2 flex items-center justify-between">
+    {[
+      { label: 'Home', icon: Home, href: '/dashboard' },
+      { label: 'Import Excel', icon: FileSpreadsheet, href: '/import' },
+      { label: 'Composer', icon: Send, href: '/composer' },
+      { label: 'Clients', icon: Users, href: '/clients' },
+      { label: 'Settings', icon: Settings, href: '/quiz' },
+    ].map((tab) => {
+      const IconComponent = tab.icon;
+      const isActive =
+        location.pathname === tab.href ||
+        (tab.href === '/dashboard' && location.pathname === '/');
 
-        <button 
-          onClick={() => navigate('/import')}
-          className={`flex flex-col items-center gap-1 group cursor-pointer ${
-            location.pathname === '/import' ? 'text-orange-500' : 'text-slate-400'
-          }`}
+      return (
+        <button
+          key={tab.href}
+          type="button"
+          onClick={() => navigate(tab.href)}
+          className="flex flex-col items-center justify-center flex-1 cursor-pointer bg-transparent border-none p-0"
         >
-          <div className={`h-10 w-10 rounded-full flex items-center justify-center transition-all ${
-            location.pathname === '/import' ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30' : ''
-          }`}>
-            <FileSpreadsheet className="h-5 w-5 stroke-[2]" />
-          </div>
-          <span className="text-[10px] font-bold">Import</span>
-        </button>
+          {isActive ? (
+            <div className="h-10 w-10 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-lg shadow-orange-500/30 mb-0.5">
+              <IconComponent className="h-5 w-5 stroke-[2.2]" />
+            </div>
+          ) : (
+            <div className="h-8 w-8 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+              <IconComponent className="h-4 w-4 stroke-[1.8]" />
+            </div>
+          )}
 
-        <button 
-          onClick={() => navigate('/composer')}
-          className={`flex flex-col items-center gap-1 group cursor-pointer ${
-            location.pathname === '/composer' ? 'text-orange-500' : 'text-slate-400'
-          }`}
-        >
-          <div className={`h-10 w-10 rounded-full flex items-center justify-center transition-all ${
-            location.pathname === '/composer' ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30' : ''
+          <span className={`text-[9px] font-bold ${
+            isActive ? 'text-orange-500' : 'text-slate-400'
           }`}>
-            <Send className="h-5 w-5 stroke-[2]" />
-          </div>
-          <span className="text-[10px] font-bold">Composer</span>
+            {tab.label}
+          </span>
         </button>
-
-        <button 
-          onClick={() => navigate('/clients')}
-          className={`flex flex-col items-center gap-1 group cursor-pointer ${
-            location.pathname === '/clients' || location.pathname === '/' ? 'text-orange-500' : 'text-slate-400'
-          }`}
-        >
-          <div className={`h-10 w-10 rounded-full flex items-center justify-center transition-all ${
-            location.pathname === '/clients' ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30' : ''
-          }`}>
-            <Users className="h-5 w-5 stroke-[2]" />
-          </div>
-          <span className="text-[10px] font-bold">Clients</span>
-        </button>
-
-        <button 
-          onClick={() => navigate('/quiz')}
-          className={`flex flex-col items-center gap-1 group cursor-pointer ${
-            location.pathname === '/settings' ? 'text-orange-500' : 'text-slate-400'
-          }`}
-        >
-          <div className={`h-10 w-10 rounded-full flex items-center justify-center transition-all ${
-            location.pathname === '/settings' ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30' : ''
-          }`}>
-            <Settings className="h-5 w-5 stroke-[2]" />
-          </div>
-          <span className="text-[10px] font-bold">Settings</span>
-        </button>
-      </div>
+      );
+    })}
+  </nav>
+</div>
 
       {/* ADD / EDIT MODAL */}
       {isModalOpen && (
