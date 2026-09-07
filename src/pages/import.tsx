@@ -640,7 +640,7 @@ export default function ImportClients() {
 
   const navigationTabs = [
     { id: 'home', label: 'Home', icon: Home, href: '/' },
-    { id: 'import_clients', label: 'Import Clients', icon: FileSpreadsheet, href: '/import-clients' },
+    { id: 'import_clients', label: 'Import Excel', icon: FileSpreadsheet, href: '/import-clients' },
     { id: 'sell', label: 'Composer', icon: ShoppingCart, href: '/composer' },
     { id: 'analytics', label: 'Clients', icon: Users, href: '/clients' },
     { id: 'notification', label: 'Settings', icon: Bell, href: '/quiz' }
@@ -655,7 +655,7 @@ export default function ImportClients() {
   }
 
   return (
-    <div className={`min-h-screen bg-[#f8fafc] dark:bg-[#070b13] text-slate-900 dark:text-slate-100 transition-colors duration-300 pb-28 ${isDark ? 'dark' : ''}`}>
+    <div className={`min-h-screen bg-[#f8fafc] dark:bg-[#070b13] text-slate-900 dark:text-slate-100 transition-colors duration-300 pb-20 ${isDark ? 'dark' : ''}`}>
 
       {/* NAVBAR */}
       <div className="w-full bg-white/60 dark:bg-[#070b13]/60 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800/80 sticky top-0 z-40 shadow-sm">
@@ -1401,22 +1401,22 @@ export default function ImportClients() {
         </div>
       )}
 
-      {/* BOTTOM NAV */}
-      <div className="fixed bottom-6 left-0 right-0 z-40 flex justify-center px-4 pointer-events-none">
-        <nav className="pointer-events-auto bg-white dark:bg-[#0c1222] border border-slate-100 dark:border-slate-800 rounded-full shadow-lg px-5 py-2.5 flex items-center gap-4 sm:gap-8">
+      {/* COMPACT BOTTOM NAV (MATCHING DASHBOARD SIZE) */}
+      <div className="fixed bottom-4 left-0 right-0 z-50 flex justify-center px-4">
+        <nav className="w-full max-w-sm bg-white/95 dark:bg-[#0c1222]/95 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 rounded-full shadow-2xl px-3 py-2 flex items-center justify-between">
           {navigationTabs.map((tab) => {
             const IconComponent = tab.icon;
             const isActive = activeTab === tab.id;
 
             return (
               <Link key={tab.id} to={tab.href} onClick={() => setActiveTab(tab.id)}>
-                <div className="flex flex-col items-center justify-center relative group cursor-pointer">
+                <div className="flex flex-col items-center justify-center relative group cursor-pointer px-2 py-0.5">
                   <div className={`flex items-center justify-center transition-all ${
-                    isActive ? 'h-10 w-10 rounded-full bg-orange-500 text-white' : 'h-8 w-8 text-slate-400 hover:text-orange-500'
+                    isActive ? 'h-7 w-7 rounded-full bg-orange-500 text-white shadow-sm' : 'h-6 w-6 text-slate-400 hover:text-orange-500'
                   }`}>
-                    <IconComponent className={isActive ? 'h-5 w-5' : 'h-4 w-4'} />
+                    <IconComponent className={isActive ? 'h-3.5 w-3.5' : 'h-3.5 w-3.5'} />
                   </div>
-                  <span className={`text-[10px] font-bold mt-1 ${isActive ? 'text-orange-500 font-extrabold' : 'text-slate-400'}`}>
+                  <span className={`text-[9px] font-extrabold mt-0.5 tracking-tight ${isActive ? 'text-orange-500' : 'text-slate-400'}`}>
                     {tab.label}
                   </span>
                 </div>

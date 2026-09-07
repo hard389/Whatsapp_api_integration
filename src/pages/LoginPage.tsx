@@ -114,7 +114,7 @@ export default function LoginPage() {
             />
           </div>
           <h2 className={`text-2xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-            MJ Mobiles
+            Whatsapp Engine
           </h2>
           <p className={`text-xs mt-1 font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
             Sign in to continue to your workspace
@@ -138,7 +138,7 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className={`rounded-xl h-11 transition-all ${isDark ? 'bg-[#0B1224] border-slate-700 text-white focus:border-orange-500' : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-orange-500'}`}
-              placeholder="teacher@edutrack.com"
+              placeholder="admin@gmail.com"
               autoComplete="off"
               required 
             />

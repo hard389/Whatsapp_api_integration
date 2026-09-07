@@ -714,7 +714,7 @@ export default function ClientsManagement() {
       </main>
 
       {/* BOTTOM NAV BAR */}
-      <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-lg backdrop-blur-md rounded-full border shadow-xl px-4 py-2 flex items-center justify-between transition-colors duration-300 ${
+      <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-full max-w-sm backdrop-blur-md rounded-full border shadow-2xl px-3 py-2 flex items-center justify-between transition-colors duration-300 ${
         isCardDark ? 'bg-[#0c1222] border-slate-800 text-white' : 'bg-white/90 border-slate-200/80 text-slate-700'
       }`}>
         <button 
@@ -774,7 +774,7 @@ export default function ClientsManagement() {
         </button>
 
         <button 
-          onClick={() => navigate('/settings')}
+          onClick={() => navigate('/quiz')}
           className={`flex flex-col items-center gap-1 group cursor-pointer ${
             location.pathname === '/settings' ? 'text-orange-500' : 'text-slate-400'
           }`}

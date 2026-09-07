@@ -531,8 +531,8 @@ export default function ProfileSettingsPage() {
 
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4 pt-2 bg-gradient-to-t from-[#f8fafc] via-[#f8fafc]/80 to-transparent dark:from-[#070b13] dark:via-[#070b13]/80 pointer-events-none">
-        <nav className="mx-auto max-w-lg bg-white dark:bg-[#0c1222] border border-slate-200/90 dark:border-slate-800 rounded-[35px] shadow-[0_8px_30px_rgba(0,0,0,0.08)] px-3 py-2 flex items-center justify-between pointer-events-auto">
+      <div className="fixed bottom-4 left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
+  <nav className="pointer-events-auto w-full max-w-sm bg-white/95 dark:bg-[#0c1222]/95 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 rounded-full shadow-2xl px-3 py-2 flex items-center justify-between">
           {navigationTabs.map((tab) => {
             const IconComponent = tab.icon;
             const isActive = activeTab === tab.id;

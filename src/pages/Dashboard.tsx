@@ -132,45 +132,96 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    const activeDocId = currentUserId || currentUserEmail;
-    if (!activeDocId) return;
     setLoading(true);
 
-    const campaignRef = collection(db, "users", activeDocId, "campaigns");
-    const unsubscribeCampaigns = onSnapshot(campaignRef, (snapshot) => {
-      const data: any[] = [];
-      snapshot.forEach((doc) => data.push({ id: doc.id, ...doc.data() }));
-      setCampaigns(data);
+    const unsubscribes: (() => void)[] = [];
+
+    // Keys to search in users/{key}/...
+    const potentialUserKeys = Array.from(
+      new Set([currentUserId, currentUserEmail, 'alitahir243715@gmail.com'].filter(Boolean))
+    ) as string[];
+
+    // Data maps to prevent duplicate items from multiple listeners
+    const campaignsMap = new Map<string, any>();
+    const clientsMap = new Map<string, any>();
+    const activitiesMap = new Map<string, any>();
+    let totalNotifications = 0;
+
+    const updateCampaignsState = () => {
+      setCampaigns(Array.from(campaignsMap.values()));
       setLoading(false);
-    }, () => triggerToast("Failed to sync campaigns", "error"));
+    };
 
-    const clientRef = collection(db, "users", activeDocId, "clients");
-    const unsubscribeClients = onSnapshot(clientRef, (snapshot) => {
-      const data: any[] = [];
-      snapshot.forEach((doc) => data.push({ id: doc.id, ...doc.data() }));
-      setClients(data);
-    }, () => triggerToast("Failed to sync clients", "error"));
+    const updateClientsState = () => {
+      setClients(Array.from(clientsMap.values()));
+    };
 
-    const notifRef = collection(db, "users", activeDocId, "notifications");
-    const unsubscribeNotifs = onSnapshot(notifRef, (snapshot) => {
-      setNotificationCount(snapshot.size);
+    const updateActivitiesState = () => {
+      const logs = Array.from(activitiesMap.values());
+      logs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      setRecentActivities(logs.slice(0, 5));
+    };
+
+    // 1. Fetch subcollections under potential user keys (UID, Email, etc.)
+    potentialUserKeys.forEach((key) => {
+      // Campaigns
+      const campaignRef = collection(db, "users", key, "campaigns");
+      const unsubCamp = onSnapshot(campaignRef, (snapshot) => {
+        snapshot.forEach((doc) => campaignsMap.set(doc.id, { id: doc.id, ...doc.data() }));
+        updateCampaignsState();
+      }, () => {});
+      unsubscribes.push(unsubCamp);
+
+      // Clients
+      const clientRef = collection(db, "users", key, "clients");
+      const unsubClient = onSnapshot(clientRef, (snapshot) => {
+        snapshot.forEach((doc) => clientsMap.set(doc.id, { id: doc.id, ...doc.data() }));
+        updateClientsState();
+      }, () => {});
+      unsubscribes.push(unsubClient);
+
+      // Notifications
+      const notifRef = collection(db, "users", key, "notifications");
+      const unsubNotif = onSnapshot(notifRef, (snapshot) => {
+        totalNotifications += snapshot.size;
+        setNotificationCount(totalNotifications);
+      }, () => {});
+      unsubscribes.push(unsubNotif);
+
+      // Activity Logs
+      const activityRef = collection(db, "users", key, "activity_logs");
+      const activityQuery = query(activityRef, orderBy("timestamp", "desc"), limit(5));
+      const unsubAct = onSnapshot(activityQuery, (snapshot) => {
+        snapshot.forEach((doc) => activitiesMap.set(doc.id, { id: doc.id, ...doc.data() }));
+        updateActivitiesState();
+      }, () => {
+        // Fallback for non-indexed logs
+        const fallbackUnsub = onSnapshot(activityRef, (snap) => {
+          snap.forEach((doc) => activitiesMap.set(doc.id, { id: doc.id, ...doc.data() }));
+          updateActivitiesState();
+        }, () => {});
+        unsubscribes.push(fallbackUnsub);
+      });
+      unsubscribes.push(unsubAct);
     });
 
-    const activityRef = collection(db, "users", activeDocId, "activity_logs");
-    const activityQuery = query(activityRef, orderBy("timestamp", "desc"), limit(5));
-    const unsubscribeActivity = onSnapshot(activityQuery, (snapshot) => {
-      const logs: any[] = [];
-      snapshot.forEach((doc) => logs.push({ id: doc.id, ...doc.data() }));
-      setRecentActivities(logs);
-    }, () => {
-      // Graceful fallback for non-indexed/missing activity logs
-    });
+    // 2. Direct Root Collections Fallback (if data is stored at top level)
+    const rootCampaignsRef = collection(db, "campaigns");
+    const unsubRootCamp = onSnapshot(rootCampaignsRef, (snapshot) => {
+      snapshot.forEach((doc) => campaignsMap.set(doc.id, { id: doc.id, ...doc.data() }));
+      updateCampaignsState();
+    }, () => {});
+    unsubscribes.push(unsubRootCamp);
+
+    const rootClientsRef = collection(db, "clients");
+    const unsubRootClient = onSnapshot(rootClientsRef, (snapshot) => {
+      snapshot.forEach((doc) => clientsMap.set(doc.id, { id: doc.id, ...doc.data() }));
+      updateClientsState();
+    }, () => {});
+    unsubscribes.push(unsubRootClient);
 
     return () => {
-      unsubscribeCampaigns();
-      unsubscribeClients();
-      unsubscribeNotifs();
-      unsubscribeActivity();
+      unsubscribes.forEach((unsub) => unsub());
     };
   }, [currentUserId, currentUserEmail]);
 
